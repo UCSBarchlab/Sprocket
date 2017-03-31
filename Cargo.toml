@@ -1,0 +1,12 @@
+[package]
+name = "rv6"
+version = "0.1.0"
+authors = ["David Coffill <david@coffill.net>"]
+
+[lib]
+project-type = ["staticlib"]
+# need to set 32 bit
+
+[dependencies]
+x86 = "0.8.1"
+#goblin = "0.0.8"
