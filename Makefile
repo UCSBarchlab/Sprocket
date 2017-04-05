@@ -15,6 +15,7 @@ assembly_source_files := $(wildcard src/*.S)
 assembly_object_files := $(patsubst src/%.S, \
     %.o, $(assembly_source_files))
 linker_script := kernel.ld
+.DEFAULT_GOAL := kernel
 
 ifndef CPUS
 CPUS := 2
@@ -38,7 +39,6 @@ initcode: src/initcode.S
 	$(CC) $(CFLAGS) -nostdinc -I. -c src/initcode.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o initcode.out initcode.o
 	$(OBJCOPY) -S -O binary initcode.out initcode
-	$(OBJDUMP) -S initcode.o > initcode.asm
 
 entryother: src/entryother.S
 	$(CC) $(CFLAGS) -fno-pic -nostdinc -I. -c src/entryother.S
@@ -66,8 +66,6 @@ kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode
 
 cargo:
 	cargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static
-#cargo rustc -- -C relocation-model=static --crate-type=staticlib -Z no-landing-pads
-
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
