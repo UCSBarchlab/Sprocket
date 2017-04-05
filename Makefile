@@ -59,11 +59,8 @@ mkfs: src/mkfs.c src/fs.h
 entry.o: src/entry.S
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o entry.o src/entry.S
 
-entrypgdir.o: src/entrypgdir.c
-	gcc -m32 -gdwarf-2 -Wa,-divide -c -o entrypgdir.o src/entrypgdir.c
-
-kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode entrypgdir.o
-	@ld -n --gc-section -T kernel.ld -o kernel entry.o entrypgdir.o $(rust_os) -b binary initcode entryother
+kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode
+	@ld -n --gc-section -T kernel.ld -o kernel entry.o $(rust_os) -b binary initcode entryother
 
 -include *.d
 

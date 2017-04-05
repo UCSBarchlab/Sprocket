@@ -3,3 +3,7 @@ target/
 Cargo.lock
 *.swo
 *.swp
+*.o
+*.asm
+_init
+_sh
