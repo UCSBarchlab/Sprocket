@@ -49,7 +49,7 @@ entry:
   orl     $(CR4_PSE), %eax
   movl    %eax, %cr4
   # Set page directory
-  movl    $P2V_WO(entrypgdir), %eax
+  movl    $P2V_WO(ENTRYPGDIR), %eax
   movl    %eax, %cr3
   # Turn on paging.
   movl    %cr0, %eax
@@ -59,6 +59,9 @@ entry:
   # Set up the stack pointer.
   movl $(stack + KSTACKSIZE), %esp
 
+  # Enable SSE
+  call set_up_SSE
+
   # Jump to main(), and switch to executing at
   # high addresses. The indirect call is needed because
   # the assembler produces a PC-relative instruction
@@ -67,3 +70,26 @@ entry:
   jmp *%eax
 
 .comm stack, KSTACKSIZE
+
+
+# Based on code from http://wiki.osdev.org/SSE
+set_up_SSE:
+    # check for SSE
+    mov $0x1, %eax
+    cpuid
+    test $(1<<25), %edx
+    jz .no_SSE
+
+    # enable SSE
+    mov %cr0, %eax
+    and $0xFFFB, %ax      # clear coprocessor emulation CR0.EM
+    or $0x2, %ax          # set coprocessor monitoring  CR0.MP
+    mov %eax, %cr0
+    mov %cr4, %eax
+    or $(3 << 9), %ax       # set CR4.OSFXSR and CR4.OSXMMEXCPT at the same time
+    mov %eax, %cr4
+
+    ret
+.no_SSE:
+    mov $0x48, %al
+	hlt

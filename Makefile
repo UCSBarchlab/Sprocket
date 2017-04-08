@@ -17,6 +17,21 @@ assembly_object_files := $(patsubst src/%.S, \
 linker_script := kernel.ld
 .DEFAULT_GOAL := kernel
 
+QEMU = qemu-system-x86_64
+GDBPORT = $(shell expr `id -u` % 5000 + 25000)
+# QEMU's gdb stub command line changed in 0.11
+QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+	then echo "-gdb tcp::$(GDBPORT)"; \
+	else echo "-s -p $(GDBPORT)"; fi)
+
+.gdbinit: .gdbinit.tmpl
+	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
+
+qemu-gdb: fs.img cofflos.img .gdbinit
+	@echo "*** Now run 'gdb'." 1>&2
+	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
+
+
 ifndef CPUS
 CPUS := 2
 endif
@@ -61,11 +76,12 @@ entry.o: src/entry.S
 
 kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode
 	@ld -n --gc-section -T kernel.ld -o kernel entry.o $(rust_os) -b binary initcode entryother
+	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
 
 -include *.d
 
 cargo:
-	cargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static
+	cargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
