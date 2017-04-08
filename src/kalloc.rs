@@ -133,6 +133,46 @@ pub fn kalloc() -> Result<*mut u8, &'static str> {
 }
 
 
+// Customer allocator logic, allowing us to use Box, etc.
+// See https://doc.rust-lang.org/book/custom-allocators.html for more info
+
+#[no_mangle]
+pub extern "C" fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
+    // Keep allocator logic simple for now, by forbidding allocation larger than 1 page
+    assert!(size <= PGSIZE);
+    kalloc().expect("Allocation failed")
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_usable_size(size: usize, align: usize) -> usize {
+    PGSIZE
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, align: usize) {
+    kfree(ptr);
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_reallocate(ptr: *mut u8,
+                                    size: usize,
+                                    new_size: usize,
+                                    align: usize)
+                                    -> *mut u8 {
+    panic!("Reallocation not supported!")
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
+                                            size: usize,
+                                            new_size: usize,
+                                            align: usize)
+                                            -> usize {
+    PGSIZE
+}
+
+
+
 // todo: figure out if there's a better way to have a lock other than conditionally locking like
 // xv6.  Maybe init it without a lock, then and then MOVE the linked list into the lock, where it
 // can then be forceably locked/unlocked

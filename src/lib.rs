@@ -6,10 +6,14 @@
 #![feature(repr_simd)]
 #![allow(dead_code)]
 #![feature(unique)]
+#![feature(allocator)]
+#![feature(alloc)]
+#![allocator]
 
 extern crate rlibc;
 extern crate linked_list_allocator;
 extern crate spin;
+extern crate alloc;
 
 mod kalloc;
 mod flags;
