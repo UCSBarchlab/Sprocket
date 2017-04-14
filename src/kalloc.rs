@@ -137,6 +137,7 @@ pub fn kalloc() -> Result<*mut u8, &'static str> {
 // See https://doc.rust-lang.org/book/custom-allocators.html for more info
 
 #[no_mangle]
+#[allow(unused_variables)]
 pub extern "C" fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
     // Keep allocator logic simple for now, by forbidding allocation larger than 1 page
     assert!(size <= PGSIZE);
@@ -144,16 +145,19 @@ pub extern "C" fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
 }
 
 #[no_mangle]
+#[allow(unused_variables)]
 pub extern "C" fn __rust_usable_size(size: usize, align: usize) -> usize {
     PGSIZE
 }
 
 #[no_mangle]
+#[allow(unused_variables)]
 pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, align: usize) {
     kfree(ptr);
 }
 
 #[no_mangle]
+#[allow(unused_variables)]
 pub extern "C" fn __rust_reallocate(ptr: *mut u8,
                                     size: usize,
                                     new_size: usize,
@@ -163,6 +167,7 @@ pub extern "C" fn __rust_reallocate(ptr: *mut u8,
 }
 
 #[no_mangle]
+#[allow(unused_variables)]
 pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
                                             size: usize,
                                             new_size: usize,

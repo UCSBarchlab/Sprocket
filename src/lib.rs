@@ -2,10 +2,8 @@
 #![feature(lang_items)]
 #![feature(const_fn)]
 #![feature(asm)]
-#![feature(integer_atomics)]
 #![feature(repr_simd)]
 #![allow(dead_code)]
-#![feature(unique)]
 #![feature(allocator)]
 #![feature(alloc)]
 #![allocator]
@@ -14,9 +12,18 @@ extern crate rlibc;
 extern crate linked_list_allocator;
 extern crate spin;
 extern crate alloc;
+extern crate x86;
 
-mod kalloc;
+pub mod kalloc;
 mod flags;
+//mod vm;
+mod lapic;
+mod traps;
+mod mp;
+mod process;
+mod mmu;
+mod file;
+mod fs;
 
 const KERNBASE: u32 = 0x80000000;
 
