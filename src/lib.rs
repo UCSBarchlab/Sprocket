@@ -16,6 +16,8 @@ extern crate alloc;
 extern crate x86;
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
 
 pub mod kalloc;
 mod flags;
@@ -25,6 +27,8 @@ mod process;
 mod mmu;
 mod file;
 mod fs;
+
+use vm::{PhysAddr, Address};
 
 const KERNBASE: u32 = 0x80000000;
 
@@ -38,7 +42,7 @@ pub extern "C" fn main() {
         //        kalloc::kinit1(&mut kalloc::end as *mut u8,
 
         kalloc::kinit1(&mut kalloc::end,
-                       kalloc::P2V_mut((4 * 1024 * 1024) as *mut u8));
+                       PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
     }
 
 

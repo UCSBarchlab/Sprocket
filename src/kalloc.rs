@@ -12,11 +12,11 @@ pub const PGSIZE: usize = 4096;
 
 // Memory layout
 
-pub const KERNBASE: usize = 0x80000000;
-pub const KERNLINK: usize = (KERNBASE + EXTMEM); // Address where kernel is linked
+pub const KERNBASE: VirtAddr = VirtAddr(0x80000000);
+pub const KERNLINK: VirtAddr = VirtAddr(KERNBASE.0 + EXTMEM.0); // Address where kernel is linked
 
 
-pub const EXTMEM: usize = 0x100000; // Start of extended memory
+pub const EXTMEM: PhysAddr = PhysAddr(0x100000); // Start of extended memory
 pub const PHYSTOP: PhysAddr = PhysAddr(0xE000000); // Top physical memory
 pub const DEVSPACE: VirtAddr = VirtAddr(0xFE000000); // Other devices are at high addresses
 
@@ -42,33 +42,7 @@ static mut KMEM: Kmem = Kmem {
 // TODO: perhaps make a PhysAddr and a VirtAddr to ensure that
 // nobody ever tries to convert a PhysAddr to a PhysAddr, etc.
 
-//#define V2P(a) (((uint) (a)) - KERNBASE)
-#[allow(non_snake_case)]
-#[allow(const_err)]
-unsafe fn V2P(addr: *const u8) -> *const u8 {
-    assert!(addr as usize >= KERNBASE);
-    (addr as usize - KERNBASE) as *const u8
-}
 
-#[allow(const_err)]
-#[allow(non_snake_case)]
-unsafe fn V2P_mut(addr: *mut u8) -> *mut u8 {
-    assert!(addr as usize >= KERNBASE);
-    (addr as usize - KERNBASE) as *mut u8
-}
-
-//#define P2V(a) (((void *) (a)) + KERNBASE)
-#[allow(non_snake_case)]
-pub unsafe fn P2V(addr: *const u8) -> *const u8 {
-    assert!((addr as usize) < KERNBASE);
-    addr.offset(KERNBASE as isize)
-}
-
-#[allow(non_snake_case)]
-pub unsafe fn P2V_mut(addr: *mut u8) -> *mut u8 {
-    assert!((addr as usize) < KERNBASE);
-    addr.offset(KERNBASE as isize) as *mut u8
-}
 
 // So this is exactly what XV6 does, although it scares the hell out of me
 pub unsafe fn page_roundup(addr: *const u8) -> *const u8 {

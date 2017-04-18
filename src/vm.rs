@@ -1,17 +1,54 @@
 use kalloc;
 use alloc::boxed::Box;
 use core;
+use core::ops::Sub;
 
 
 extern "C" {
-    static mut data: u8;
+    static data: u8;
 }
 
-struct Kmap {
+// Virtual address at beginning of data segment
+// see kernel.ld for more info
+
+pub struct Kmap {
     virt: VirtAddr,
-    phys_start: PhysAddr,
-    phys_end: PhysAddr,
+    p_start: PhysAddr,
+    p_end: PhysAddr,
     perm: Entry,
+}
+
+lazy_static! {
+    static ref KMAP: [Kmap; 4] = {
+        #[allow(non_snake_case)]
+        let DATA_BEGIN: VirtAddr = unsafe {VirtAddr(&data as *const _ as usize)};
+        [
+            Kmap {
+                virt: kalloc::KERNBASE,
+                p_start: PhysAddr(0),
+                p_end: kalloc::EXTMEM,
+                perm: WRITABLE,
+            },
+            Kmap {
+                virt: kalloc::KERNLINK,
+                p_start: kalloc::KERNLINK.to_phys(),
+                p_end: DATA_BEGIN.to_phys(),
+                perm: Entry::empty(),
+            },
+            Kmap {
+                virt: DATA_BEGIN,
+                p_start: DATA_BEGIN.to_phys(),
+                p_end: kalloc::PHYSTOP,
+                perm: WRITABLE,
+            },
+            Kmap {
+                virt: kalloc::DEVSPACE,
+                p_start: PhysAddr(kalloc::DEVSPACE.addr()),
+                p_end: PhysAddr(0),
+                perm: WRITABLE,
+            },
+        ]
+    };
 }
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
@@ -50,6 +87,21 @@ impl PhysAddr {
 
     pub fn to_virt(&self) -> VirtAddr {
         VirtAddr::new(self.0)
+    }
+}
+
+impl Sub for PhysAddr {
+    type Output = usize;
+
+    fn sub(self, other: PhysAddr) -> usize {
+        self.0 - other.0
+    }
+}
+
+impl Sub for VirtAddr {
+    type Output = usize;
+    fn sub(self, other: VirtAddr) -> usize {
+        self.0 - other.0
     }
 }
 
@@ -123,7 +175,7 @@ impl Address for PhysAddr {
 }
 
 
-pub static mut KPGDIR: u32 = 0;
+//pub static mut KPGDIR: PageDirEntry = PageDirEntry(Entry::empty());
 
 fn seginit() {
     /*
@@ -135,18 +187,27 @@ fn seginit() {
 
 fn kvmalloc() {
     unsafe {
-        KPGDIR = setupkvm();
+        //KPGDIR = setupkvm().unwrap();
     }
     switchkvm();
 }
 
-fn setupkvm() -> u32 {
+fn setupkvm() -> Result<*const PageDirEntry, ()> {
 
-    let pgdir = box [PageDirEntry; 1024]; // allocate new page table
+    let pgdir = Box::into_raw(box [PageDirEntry(Entry::empty()); 1024]); // allocate new page table
 
+    // We know this is okay, just for convenience
+    let slice = unsafe { &mut (*pgdir)[0..1024] };
     assert!(kalloc::PHYSTOP.to_virt() <= kalloc::DEVSPACE);
 
-    0
+
+    for k in KMAP.iter() {
+        map_pages(slice, k.virt, k.p_end - k.p_start, k.p_start, k.perm)?;
+
+    }
+
+    unimplemented!();
+
 }
 
 fn switchkvm() {}
@@ -192,7 +253,7 @@ fn walkpgdir(p: &mut [PageDirEntry],
         if !allocate {
             return Err(());
         }
-        let alloc = box [PageTableEntry; 1024];
+        let alloc = box [PageTableEntry(Entry::empty()); 1024];
         // allocate new page table and consume Box to prevent deallocation
         pgtab = VirtAddr::new(Box::into_raw(alloc) as usize);
         let mut new_entry = PageDirEntry(Entry::empty());
