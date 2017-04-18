@@ -175,7 +175,7 @@ impl Address for PhysAddr {
 }
 
 
-//pub static mut KPGDIR: PageDirEntry = PageDirEntry(Entry::empty());
+pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
 fn seginit() {
     /*
@@ -185,14 +185,14 @@ fn seginit() {
     */
 }
 
-fn kvmalloc() {
+pub fn kvmalloc() {
     unsafe {
-        //KPGDIR = setupkvm().unwrap();
+        KPGDIR = setupkvm().unwrap();
     }
     switchkvm();
 }
 
-fn setupkvm() -> Result<*const PageDirEntry, ()> {
+fn setupkvm() -> Result<VirtAddr, ()> {
 
     let pgdir = Box::into_raw(box [PageDirEntry(Entry::empty()); 1024]); // allocate new page table
 
@@ -203,14 +203,17 @@ fn setupkvm() -> Result<*const PageDirEntry, ()> {
 
     for k in KMAP.iter() {
         map_pages(slice, k.virt, k.p_end - k.p_start, k.p_start, k.perm)?;
-
     }
 
-    unimplemented!();
-
+    return Ok(VirtAddr::new(pgdir as usize));
 }
 
-fn switchkvm() {}
+fn switchkvm() {
+    unsafe {
+        let addr = KPGDIR.to_phys().addr();
+        asm!("mov $0, %cr3" : : "r" (addr) : : "volatile")
+    }
+}
 
 fn map_pages(p: &mut [PageDirEntry],
              va: VirtAddr,

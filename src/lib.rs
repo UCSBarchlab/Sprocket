@@ -45,6 +45,8 @@ pub extern "C" fn main() {
                        PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
     }
 
+    vm::kvmalloc();
+
 
     loop {}
 }
@@ -57,7 +59,8 @@ pub extern "C" fn panic_fmt() -> ! {
 }
 
 #[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
+#[no_mangle]
+pub extern "C" fn eh_personality() {}
 
 #[allow(non_snake_case)]
 #[no_mangle]
