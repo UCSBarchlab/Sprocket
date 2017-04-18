@@ -1,7 +1,7 @@
 extern crate spin;
 use self::spin::Mutex;
 use rlibc::memset;
-use vm::{PhysAddr, VirtAddr};
+use vm::{PhysAddr, VirtAddr, Address};
 
 extern "C" {
     pub static mut end: u8;

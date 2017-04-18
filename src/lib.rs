@@ -3,16 +3,19 @@
 #![feature(const_fn)]
 #![feature(asm)]
 #![feature(repr_simd)]
-#![allow(dead_code)]
 #![feature(allocator)]
 #![feature(alloc)]
+#![feature(box_syntax)]
 #![allocator]
+#![allow(dead_code)]
 
 extern crate rlibc;
 extern crate linked_list_allocator;
 extern crate spin;
 extern crate alloc;
 extern crate x86;
+#[macro_use]
+extern crate bitflags;
 
 pub mod kalloc;
 mod flags;
@@ -22,8 +25,6 @@ mod process;
 mod mmu;
 mod file;
 mod fs;
-
-use alloc::boxed::Box;
 
 const KERNBASE: u32 = 0x80000000;
 
