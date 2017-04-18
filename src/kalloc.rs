@@ -1,14 +1,26 @@
 extern crate spin;
 use self::spin::Mutex;
 use rlibc::memset;
+use vm::{PhysAddr, VirtAddr};
 
 extern "C" {
     pub static mut end: u8;
 }
 
-const PGSIZE: usize = 4096;
-const PHYSTOP: usize = 0xE000000;
-const KERNBASE: usize = 0x80000000;
+pub const PGSIZE: usize = 4096;
+
+
+// Memory layout
+
+pub const KERNBASE: usize = 0x80000000;
+pub const KERNLINK: usize = (KERNBASE + EXTMEM); // Address where kernel is linked
+
+
+pub const EXTMEM: usize = 0x100000; // Start of extended memory
+pub const PHYSTOP: PhysAddr = PhysAddr(0xE000000); // Top physical memory
+pub const DEVSPACE: VirtAddr = VirtAddr(0xFE000000); // Other devices are at high addresses
+
+// Key addresses for address space layout (see kmap in vm.c for layout)
 
 pub struct Kmem {
     freelist: Option<*mut Run>,
@@ -47,7 +59,7 @@ unsafe fn V2P_mut(addr: *mut u8) -> *mut u8 {
 
 //#define P2V(a) (((void *) (a)) + KERNBASE)
 #[allow(non_snake_case)]
-unsafe fn P2V(addr: *const u8) -> *const u8 {
+pub unsafe fn P2V(addr: *const u8) -> *const u8 {
     assert!((addr as usize) < KERNBASE);
     addr.offset(KERNBASE as isize)
 }
@@ -59,12 +71,12 @@ pub unsafe fn P2V_mut(addr: *mut u8) -> *mut u8 {
 }
 
 // So this is exactly what XV6 does, although it scares the hell out of me
-unsafe fn page_roundup(addr: *const u8) -> *const u8 {
+pub unsafe fn page_roundup(addr: *const u8) -> *const u8 {
     (addr.offset((PGSIZE - 1) as isize) as usize & !(PGSIZE - 1)) as *const u8
 }
 //
 // So this is exactly what XV6 does, although it scares the hell out of me
-unsafe fn page_roundup_mut(addr: *mut u8) -> *mut u8 {
+pub unsafe fn page_roundup_mut(addr: *mut u8) -> *mut u8 {
     (addr.offset((PGSIZE - 1) as isize) as usize & !(PGSIZE - 1)) as *mut u8
 }
 
@@ -82,9 +94,10 @@ unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
 
 
 fn kfree(addr: *mut u8) {
+    let v = VirtAddr(addr as usize);
+    let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
     unsafe {
-        if (addr as usize) % PGSIZE != 0 || (addr as *const _) < &end ||
-           V2P_mut(addr) > PHYSTOP as *mut _ {
+        if !v.is_page_aligned() || v < kernel_start || v.to_phys() > PHYSTOP {
             panic!("kfree");
         }
 
