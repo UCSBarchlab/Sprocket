@@ -86,6 +86,7 @@ pub struct VirtAddr(pub usize);
 
 pub const PDXSHIFT: usize = 22;
 enum Segment {
+    Null = 0,
     Kcode = 1,
     Kdata = 2,
     Kcpu = 3,
@@ -193,8 +194,25 @@ impl Address for PhysAddr {
 pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
 pub fn seginit() {
+
     unsafe {
+        /*
+        if process::CPU.is_none() {
+        }
+        */
+        if process::CPU.is_none() {
+            process::CPU = Some(process::Cpu::new());
+        }
+
+
+        // TODO: make sure these are proper type of segment being created
         if let Some(ref mut cpu) = process::CPU {
+            cpu.gdt[Segment::Null as usize] =
+                SegmentDescriptor::new(0,
+                                       0,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       shared::PrivilegeLevel::Ring0);
             cpu.gdt[Segment::Kcode as usize] =
                 SegmentDescriptor::new(0,
                                        0xffffffff,
@@ -233,8 +251,13 @@ pub fn seginit() {
                 dtables::lgdt(&d);
                 seg::load_gs(seg::SegmentSelector::new(Segment::Kcpu as u16,
                                                        shared::PrivilegeLevel::Ring0));
+                // TODO: figure out how to make a TSS
+                /*
                 asm!("mov $0, %gs:0" : : "r" (cpu) : : "volatile");
                 asm!("mov $0, %gs:4" : : "r" (0)   : : "volatile");
+                */
+
+
             }
         }
     }

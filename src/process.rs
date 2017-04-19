@@ -1,23 +1,40 @@
 use mmu;
 use file;
-use x86::shared::segmentation::SegmentDescriptor;
-use x86::bits32::task::TaskStateSegment;
+pub use x86::shared::segmentation::SegmentDescriptor;
+pub use x86::bits32::task::TaskStateSegment;
+pub use x86::shared::descriptor;
+use core;
 
-struct Cpu {
-    apicid: u8, // Local APIC ID
-    scheduler: *const Context, // swtch() here to enter scheduler
-    ts: TaskStateSegment, // Used by x86 to find stack for interrupt
-    gdt: [SegmentDescriptor; mmu::NSEGS], // x86 global descriptor table
-    started: bool, // Has the CPU started?
-    ncli: i32, // Depth of pushcli nesting.
-    intena: bool, // Were interrupts enabled before pushcli?
+pub static mut CPU: Option<Cpu> = None;
+
+pub struct Cpu {
+    // does this need to be a pointer?
+    pub scheduler: *const Context, // swtch() here to enter scheduler
+    pub ts: TaskStateSegment, // Used by x86 to find stack for interrupt
+    pub gdt: [SegmentDescriptor; mmu::NSEGS], // x86 global descriptor table
+    //pub started: bool, // Has the CPU started?
+    //pub ncli: i32, // Depth of pushcli nesting.
+    pub intena: bool, // Were interrupts enabled before pushcli?
 
     // Cpu-local storage variables; see below
-    cpu: *const Cpu,
-    process: *const Process, // The currently-running process.
+    pub cpu: *const Cpu,
+    pub process: *const Process, // The currently-running process.
 }
 
-struct Context {
+impl Cpu {
+    pub fn new() -> Cpu {
+        Cpu {
+            scheduler: core::ptr::null(),
+            ts: TaskStateSegment::new(),
+            gdt: [SegmentDescriptor::NULL; mmu::NSEGS],
+            intena: true,
+            cpu: core::ptr::null(),
+            process: core::ptr::null(),
+        }
+    }
+}
+
+pub struct Context {
     edi: u32,
     esi: u32,
     ebx: u32,
@@ -25,7 +42,7 @@ struct Context {
     eip: u32,
 }
 
-struct Process {
+pub struct Process {
     size: usize, // Size of process memory (bytes)
     pgdir: *const u32, // Page table
     kstack: *const u8, // Bottom of kernel stack for this process
@@ -41,7 +58,7 @@ struct Process {
     name: [char; 16], // Process name (debugging)
 }
 
-enum ProcState {
+pub enum ProcState {
     Unused,
     Embryo,
     Sleeping,
