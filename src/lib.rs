@@ -46,6 +46,7 @@ pub extern "C" fn main() {
     }
 
     vm::kvmalloc();
+    vm::seginit();
 
 
     loop {}

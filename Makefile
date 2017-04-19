@@ -81,7 +81,7 @@ kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode
 -include *.d
 
 cargo:
-	cargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2
+	cargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \

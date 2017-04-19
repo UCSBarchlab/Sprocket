@@ -2,6 +2,12 @@ use kalloc;
 use alloc::boxed::Box;
 use core;
 use core::ops::Sub;
+use process;
+use x86::shared::segmentation::SegmentDescriptor;
+use x86::shared::segmentation as seg;
+use x86::shared::dtables;
+use x86::shared;
+use mmu;
 
 
 extern "C" {
@@ -79,6 +85,15 @@ pub struct PhysAddr(pub usize);
 pub struct VirtAddr(pub usize);
 
 pub const PDXSHIFT: usize = 22;
+enum Segment {
+    Kcode = 1,
+    Kdata = 2,
+    Kcpu = 3,
+    Ucode = 4,
+    Udata = 5,
+    Tss = 6,
+}
+
 
 impl PhysAddr {
     pub fn new(addr: usize) -> PhysAddr {
@@ -177,12 +192,52 @@ impl Address for PhysAddr {
 
 pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
-fn seginit() {
-    /*
-    if let Some(cpu) = CPUS[lapic::cpunum() as usize] {
-        cpu.gdt = 0;
+pub fn seginit() {
+    unsafe {
+        if let Some(ref mut cpu) = process::CPU {
+            cpu.gdt[Segment::Kcode as usize] =
+                SegmentDescriptor::new(0,
+                                       0xffffffff,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       shared::PrivilegeLevel::Ring0);
+            cpu.gdt[Segment::Kdata as usize] =
+                SegmentDescriptor::new(0,
+                                       0xffffffff,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       shared::PrivilegeLevel::Ring0);
+            cpu.gdt[Segment::Ucode as usize] =
+                SegmentDescriptor::new(0,
+                                       0xffffffff,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       shared::PrivilegeLevel::Ring3);
+            cpu.gdt[Segment::Udata as usize] =
+                SegmentDescriptor::new(0,
+                                       0xffffffff,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       shared::PrivilegeLevel::Ring3);
+
+            cpu.gdt[Segment::Kcpu as usize] =
+                SegmentDescriptor::new(&(cpu.cpu) as *const _ as u32,
+                                       8,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       shared::PrivilegeLevel::Ring0);
+
+            {
+
+                let d = dtables::DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
+                dtables::lgdt(&d);
+                seg::load_gs(seg::SegmentSelector::new(Segment::Kcpu as u16,
+                                                       shared::PrivilegeLevel::Ring0));
+                asm!("mov $0, %gs:0" : : "r" (cpu) : : "volatile");
+                asm!("mov $0, %gs:4" : : "r" (0)   : : "volatile");
+            }
+        }
     }
-    */
 }
 
 pub fn kvmalloc() {
