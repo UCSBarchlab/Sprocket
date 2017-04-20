@@ -7,7 +7,9 @@
 #![feature(alloc)]
 #![feature(box_syntax)]
 #![allocator]
+
 #![allow(dead_code)]
+#![allow(empty_loop)]
 
 extern crate rlibc;
 extern crate linked_list_allocator;
@@ -27,6 +29,8 @@ mod process;
 mod mmu;
 mod file;
 mod fs;
+mod picirq;
+mod uart;
 
 use vm::{PhysAddr, Address};
 
@@ -39,14 +43,16 @@ pub extern "C" fn main() {
         for (i, c) in b"Kernel successfully booted!".iter().enumerate() {
             core::ptr::write(vga.offset(i as isize + 80), 0x0F << 8 | *c as u16);
         }
-        //        kalloc::kinit1(&mut kalloc::end as *mut u8,
 
         kalloc::kinit1(&mut kalloc::end,
                        PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
     }
 
+
     vm::kvmalloc();
     vm::seginit();
+    picirq::picinit();
+    let uart = unsafe { uart::Uart::new().expect("No console present on this system") };
 
 
     loop {}
@@ -56,6 +62,13 @@ pub extern "C" fn main() {
 #[lang = "panic_fmt"]
 #[no_mangle]
 pub extern "C" fn panic_fmt() -> ! {
+    unsafe {
+
+        let vga = 0xb8000 as *mut u16;
+        for (i, c) in b"panic! :(".iter().enumerate() {
+            core::ptr::write(vga.offset(i as isize + 80), 0x0F << 8 | *c as u16);
+        }
+    }
     loop {}
 }
 
