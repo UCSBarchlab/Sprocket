@@ -18,7 +18,7 @@ linker_script := kernel.ld
 .DEFAULT_GOAL := kernel
 
 QEMU = qemu-system-x86_64
-GDBPORT = $(shell expr `id -u` % 5000 + 25000)
+GDBPORT = $(shell expr `id -u` % 5000 + 25001)
 # QEMU's gdb stub command line changed in 0.11
 QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
@@ -39,6 +39,12 @@ QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=cofflos.
 
 qemu: fs.img cofflos.img
 	qemu-system-i386  $(QEMUOPTS) -monitor stdio
+
+qemu-dbg: fs.img cofflos.img
+	qemu-system-i386  $(QEMUOPTS) -monitor stdio -d int -no-reboot
+
+qemu-console: fs.img cofflos.img
+	qemu-system-i386  $(QEMUOPTS) -serial mon:stdio
 
 rust_os := target/$(target)/debug/librv6.a
 
