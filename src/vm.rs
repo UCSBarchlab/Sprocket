@@ -85,6 +85,7 @@ pub struct PhysAddr(pub usize);
 pub struct VirtAddr(pub usize);
 
 pub const PDXSHIFT: usize = 22;
+pub const PTXSHIFT: usize = 12;
 enum Segment {
     Null = 0,
     Kcode = 1,
@@ -102,7 +103,7 @@ impl PhysAddr {
     }
 
     pub fn to_virt(&self) -> VirtAddr {
-        VirtAddr::new(self.0)
+        VirtAddr::new(self.0 + kalloc::KERNBASE.addr())
     }
 }
 
@@ -110,14 +111,14 @@ impl Sub for PhysAddr {
     type Output = usize;
 
     fn sub(self, other: PhysAddr) -> usize {
-        self.0 - other.0
+        self.0.wrapping_sub(other.0)
     }
 }
 
 impl Sub for VirtAddr {
     type Output = usize;
     fn sub(self, other: VirtAddr) -> usize {
-        self.0 - other.0
+        self.0.wrapping_sub(other.0)
     }
 }
 
@@ -127,7 +128,15 @@ impl VirtAddr {
     }
 
     pub fn to_phys(&self) -> PhysAddr {
-        PhysAddr::new(self.0)
+        PhysAddr::new(self.0 - kalloc::KERNBASE.addr())
+    }
+
+    fn page_dir_index(&self) -> usize {
+        (self.addr() >> PDXSHIFT) & 0x3FF
+    }
+
+    fn page_table_index(&self) -> usize {
+        (self.addr() >> PTXSHIFT) & 0x3FF
     }
 }
 
@@ -135,10 +144,6 @@ pub trait Address {
     fn new(usize) -> Self where Self: core::marker::Sized;
 
     fn addr(&self) -> usize;
-
-    fn page_dir_index(&self) -> usize {
-        (self.addr() >> PDXSHIFT) & 0x3FF
-    }
 
     fn is_page_aligned(&self) -> bool {
         self.addr() % kalloc::PGSIZE == 0
@@ -159,13 +164,14 @@ pub trait Address {
     }
 
     // Simulate pointer arithmetic of adding/subtracting 4-byte int to address
-    fn int_offset(&self, off: isize) -> Self
+    fn offset<T>(&self, off: isize) -> Self
         where Self: core::marker::Sized
     {
+        let size = core::mem::size_of::<T>();
         if off > 0 {
-            Self::new(self.addr() + (4 * off as usize))
+            Self::new(self.addr() + (size * off as usize))
         } else {
-            Self::new(self.addr() - (4 * off as usize))
+            Self::new(self.addr() - (size * off as usize))
         }
     }
 }
@@ -252,11 +258,8 @@ pub fn seginit() {
                 seg::load_gs(seg::SegmentSelector::new(Segment::Kcpu as u16,
                                                        shared::PrivilegeLevel::Ring0));
                 // TODO: figure out how to make a TSS
-                /*
-                asm!("mov $0, %gs:0" : : "r" (cpu) : : "volatile");
-                asm!("mov $0, %gs:4" : : "r" (0)   : : "volatile");
-                */
-
+                //asm!("mov $0, %gs:0" : : "r" (cpu) : : "volatile");
+                //asm!("mov $0, %gs:4" : : "r" (0)   : : "volatile");
 
             }
         }
@@ -300,12 +303,12 @@ fn map_pages(p: &mut [PageDirEntry],
              permissions: Entry)
              -> Result<(), ()> {
     let mut a = va.page_rounddown();
-    let last = va.int_offset((size - 1) as isize).page_rounddown();
+    let last = va.offset::<u8>((size - 1) as isize).page_rounddown();
 
     loop {
         let pte = walkpgdir(p, a, true)?;
 
-        if pte.0.contains(PRESENT) {
+        if pte.0 & PRESENT == PRESENT {
             panic!("remap failed");
         }
         let mut new_entry = permissions | PRESENT;
@@ -315,8 +318,8 @@ fn map_pages(p: &mut [PageDirEntry],
             break;
         }
 
-        a = a.int_offset(1024);
-        pa = pa.int_offset(1024);
+        a = a.offset::<u8>(kalloc::PGSIZE as isize);
+        pa = pa.offset::<u8>(kalloc::PGSIZE as isize);
     }
     Ok(())
 }
@@ -343,6 +346,10 @@ fn walkpgdir(p: &mut [PageDirEntry],
     }
 
     // Unsafe because we have a raw pointer, but we're absolutely sure it's valid
-    let r = pgtab.0 as *mut PageTableEntry;
-    unsafe { Ok(r.as_mut().unwrap()) }
+    let index = va.page_table_index();
+    unsafe {
+        let tab = core::slice::from_raw_parts_mut(pgtab.addr() as *mut PageTableEntry, 1024);
+        Ok(&mut tab[index])
+    }
+    //unsafe { Ok(r.as_mut().unwrap()) }
 }
