@@ -11,20 +11,22 @@ use mmu;
 
 
 extern "C" {
+    /// The virtual address at the beginning of the data segment
     static data: u8;
 }
 
-// Virtual address at beginning of data segment
-// see kernel.ld for more info
 
-pub struct Kmap {
+/// Struct to help define kernel mappings in each process's page table
+struct Kmap {
     virt: VirtAddr,
     p_start: PhysAddr,
     p_end: PhysAddr,
     perm: Entry,
 }
 
+
 lazy_static! {
+    /// Table to define kernel mappings in each process page table
     static ref KMAP: [Kmap; 4] = {
         #[allow(non_snake_case)]
         let DATA_BEGIN: VirtAddr = unsafe {VirtAddr(&data as *const _ as usize)};
@@ -59,9 +61,16 @@ lazy_static! {
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
 #[repr(C)]
+/// A Page Directory Entry
 pub struct PageDirEntry(pub Entry);
 
+#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
+#[repr(C)]
+/// A Page Table Entry
+pub struct PageTableEntry(Entry);
+
 bitflags! {
+    /// Flags to control permissions and other aspects of PageTableEntry and PageDirEntry
     pub flags Entry: usize {
         const PRESENT  = 1,
         const WRITABLE = 1 << 1,
@@ -75,25 +84,25 @@ impl Entry {
     }
 }
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
-#[repr(C)]
-pub struct PageTableEntry(Entry);
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default)]
+/// A convenience class to safely work with and manipulate physical addresses
 pub struct PhysAddr(pub usize);
 #[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default)]
+/// A convenience class to safely work with and manipulate virtual (paged) addresses
 pub struct VirtAddr(pub usize);
 
 pub const PDXSHIFT: usize = 22;
 pub const PTXSHIFT: usize = 12;
+
+/// GDT segment descriptor indices
 enum Segment {
     Null = 0,
-    Kcode = 1,
-    Kdata = 2,
-    Kcpu = 3,
-    Ucode = 4,
-    Udata = 5,
-    Tss = 6,
+    KCode = 1,
+    KData = 2,
+    UCode = 3,
+    UData = 4,
+    TSS = 5,
 }
 
 
@@ -140,6 +149,7 @@ impl VirtAddr {
     }
 }
 
+/// A utility trait that implements common methods for PhysAddr and VirtAddr
 pub trait Address {
     fn new(usize) -> Self where Self: core::marker::Sized;
 
@@ -201,71 +211,48 @@ pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
 pub fn seginit() {
 
+    // Unsafe primarily because of global state manipulation.
+    // TODO: see if we can navigate around this by passing it as an arg,
+    // and/or refactoring this as a struct with methods.
     unsafe {
-        /*
-        if process::CPU.is_none() {
-        }
-        */
         if process::CPU.is_none() {
             process::CPU = Some(process::Cpu::new());
         }
 
-
-        // TODO: make sure these are proper type of segment being created
         if let Some(ref mut cpu) = process::CPU {
-            cpu.gdt[Segment::Null as usize] =
-                SegmentDescriptor::new(0,
-                                       0,
-                                       seg::Type::Code(seg::CODE_READ),
-                                       false,
-                                       shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::Kcode as usize] =
+            cpu.gdt[Segment::Null as usize] = SegmentDescriptor::NULL;
+            cpu.gdt[Segment::KCode as usize] =
                 SegmentDescriptor::new(0,
                                        0xffffffff,
                                        seg::Type::Code(seg::CODE_READ),
                                        false,
                                        shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::Kdata as usize] =
+            cpu.gdt[Segment::KData as usize] =
                 SegmentDescriptor::new(0,
                                        0xffffffff,
                                        seg::Type::Data(seg::DATA_WRITE),
                                        false,
                                        shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::Ucode as usize] =
+            cpu.gdt[Segment::UCode as usize] =
                 SegmentDescriptor::new(0,
                                        0xffffffff,
                                        seg::Type::Code(seg::CODE_READ),
                                        false,
                                        shared::PrivilegeLevel::Ring3);
-            cpu.gdt[Segment::Udata as usize] =
+            cpu.gdt[Segment::UData as usize] =
                 SegmentDescriptor::new(0,
                                        0xffffffff,
                                        seg::Type::Data(seg::DATA_WRITE),
                                        false,
                                        shared::PrivilegeLevel::Ring3);
 
-            cpu.gdt[Segment::Kcpu as usize] =
-                SegmentDescriptor::new(&(cpu.cpu) as *const _ as u32,
-                                       8,
-                                       seg::Type::Data(seg::DATA_WRITE),
-                                       false,
-                                       shared::PrivilegeLevel::Ring0);
-
-            {
-
-                let d = dtables::DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
-                dtables::lgdt(&d);
-                seg::load_gs(seg::SegmentSelector::new(Segment::Kcpu as u16,
-                                                       shared::PrivilegeLevel::Ring0));
-                // TODO: figure out how to make a TSS
-                //asm!("mov $0, %gs:0" : : "r" (cpu) : : "volatile");
-                //asm!("mov $0, %gs:4" : : "r" (0)   : : "volatile");
-
-            }
+            let d = dtables::DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
+            dtables::lgdt(&d);
         }
     }
 }
 
+/// Allocate a page table for the kernel (for use by the scheduler, etc).
 pub fn kvmalloc() {
     unsafe {
         KPGDIR = setupkvm().unwrap();
@@ -273,6 +260,7 @@ pub fn kvmalloc() {
     switchkvm();
 }
 
+/// Initialize kernel portion of page table
 fn setupkvm() -> Result<VirtAddr, ()> {
 
     let pgdir = Box::into_raw(box [PageDirEntry(Entry::empty()); 1024]); // allocate new page table
@@ -289,6 +277,8 @@ fn setupkvm() -> Result<VirtAddr, ()> {
     return Ok(VirtAddr::new(pgdir as usize));
 }
 
+/// Switch HW page table register (control reg 3) to the kernel page table.  This is used when no process
+/// is running.
 fn switchkvm() {
     unsafe {
         let addr = KPGDIR.to_phys().addr();
@@ -296,6 +286,7 @@ fn switchkvm() {
     }
 }
 
+/// Given page directory entries, Create PTEs for virtual addresses starting at va.
 fn map_pages(p: &mut [PageDirEntry],
              va: VirtAddr,
              size: usize,
@@ -351,5 +342,4 @@ fn walkpgdir(p: &mut [PageDirEntry],
         let tab = core::slice::from_raw_parts_mut(pgtab.addr() as *mut PageTableEntry, 1024);
         Ok(&mut tab[index])
     }
-    //unsafe { Ok(r.as_mut().unwrap()) }
 }
