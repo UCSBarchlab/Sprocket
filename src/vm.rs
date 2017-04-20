@@ -149,7 +149,7 @@ impl VirtAddr {
     }
 }
 
-/// A utility trait that implements common methods for PhysAddr and VirtAddr
+/// A utility trait that implements common methods for `PhysAddr` and `VirtAddr`
 pub trait Address {
     fn new(usize) -> Self where Self: core::marker::Sized;
 
@@ -274,7 +274,7 @@ fn setupkvm() -> Result<VirtAddr, ()> {
         map_pages(slice, k.virt, k.p_end - k.p_start, k.p_start, k.perm)?;
     }
 
-    return Ok(VirtAddr::new(pgdir as usize));
+    Ok(VirtAddr::new(pgdir as usize))
 }
 
 /// Switch HW page table register (control reg 3) to the kernel page table.  This is used when no process
