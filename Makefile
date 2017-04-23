@@ -29,7 +29,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 
 qemu-gdb: fs.img cofflos.img .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
-	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
+	$(QEMU) -serial mon:stdio -nographic $(QEMUOPTS) -S $(QEMUGDB)
 
 
 ifndef CPUS
