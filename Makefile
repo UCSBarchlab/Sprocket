@@ -44,7 +44,7 @@ qemu-dbg: fs.img cofflos.img
 	qemu-system-i386  $(QEMUOPTS) -monitor stdio -d int -no-reboot
 
 qemu-console: fs.img cofflos.img
-	qemu-system-i386  $(QEMUOPTS) -serial mon:stdio
+	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
 
 rust_os := target/$(target)/debug/librv6.a
 
