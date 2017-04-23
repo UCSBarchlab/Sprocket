@@ -31,6 +31,8 @@ mod file;
 mod fs;
 mod picirq;
 mod uart;
+#[macro_use]
+mod console;
 
 use vm::{PhysAddr, Address};
 
@@ -38,21 +40,20 @@ const KERNBASE: u32 = 0x80000000;
 
 #[no_mangle]
 pub extern "C" fn main() {
-    let vga = 0xb8000 as *mut u16;
+    println!("COFFLOS OK!");
+    println!("Initializing allocator");
     unsafe {
-        for (i, c) in b"Kernel successfully booted!".iter().enumerate() {
-            core::ptr::write(vga.offset(i as isize + 80), 0x0F << 8 | *c as u16);
-        }
-
         kalloc::kinit1(&mut kalloc::end,
                        PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
     }
 
 
+    println!("Initializing kernel paging");
     vm::kvmalloc();
+    println!("Initializing kernel segments");
     vm::seginit();
+    println!("Initializing PIC");
     picirq::picinit();
-    let uart = unsafe { uart::Uart::new().expect("No console present on this system") };
 
 
     loop {}
@@ -62,12 +63,9 @@ pub extern "C" fn main() {
 #[lang = "panic_fmt"]
 #[no_mangle]
 pub extern "C" fn panic_fmt() -> ! {
+    println!("Panic! An unrecoverable error occurred");
     unsafe {
-
-        let vga = 0xb8000 as *mut u16;
-        for (i, c) in b"panic! :(".iter().enumerate() {
-            core::ptr::write(vga.offset(i as isize + 80), 0x0F << 8 | *c as u16);
-        }
+        asm!("hlt");
     }
     loop {}
 }
