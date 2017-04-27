@@ -33,6 +33,7 @@ mod picirq;
 mod uart;
 #[macro_use]
 mod console;
+mod timer;
 
 use vm::{PhysAddr, Address};
 
