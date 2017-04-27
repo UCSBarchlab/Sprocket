@@ -69,6 +69,9 @@ pub struct PageDirEntry(pub Entry);
 /// A Page Table Entry
 pub struct PageTableEntry(Entry);
 
+/// A Page Table Entry
+pub type PageDir = [PageDirEntry; 1024];
+
 bitflags! {
     /// Flags to control permissions and other aspects of PageTableEntry and PageDirEntry
     pub flags Entry: usize {
@@ -255,26 +258,31 @@ pub fn seginit() {
 /// Allocate a page table for the kernel (for use by the scheduler, etc).
 pub fn kvmalloc() {
     unsafe {
-        KPGDIR = setupkvm().unwrap();
+        KPGDIR = VirtAddr::new(Box::into_raw(setupkvm().unwrap()) as usize);
     }
     switchkvm();
 }
 
 /// Initialize kernel portion of page table
-fn setupkvm() -> Result<VirtAddr, ()> {
+pub fn setupkvm() -> Result<Box<PageDir>, ()> {
 
-    let pgdir = Box::into_raw(box [PageDirEntry(Entry::empty()); 1024]); // allocate new page table
+    // Turn box into raw ptr because we need it to outlive this function
+    let mut pgdir = box [PageDirEntry(Entry::empty()); 1024]; // allocate new page table
 
     // We know this is okay, just for convenience
-    let slice = unsafe { &mut (*pgdir)[0..1024] };
     assert!(kalloc::PHYSTOP.to_virt() <= kalloc::DEVSPACE);
 
-
-    for k in KMAP.iter() {
-        map_pages(slice, k.virt, k.p_end - k.p_start, k.p_start, k.perm)?;
+    {
+        for k in KMAP.iter() {
+            map_pages(&mut pgdir[..],
+                      k.virt,
+                      k.p_end - k.p_start,
+                      k.p_start,
+                      k.perm)?;
+        }
     }
 
-    Ok(VirtAddr::new(pgdir as usize))
+    Ok(pgdir)
 }
 
 /// Switch HW page table register (control reg 3) to the kernel page table.  This is used when no process
