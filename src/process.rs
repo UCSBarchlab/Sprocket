@@ -1,11 +1,20 @@
 use mmu;
-use file;
+//use file;
 pub use x86::shared::segmentation::SegmentDescriptor;
 pub use x86::bits32::task::TaskStateSegment;
 pub use x86::shared::descriptor;
 use core;
+use alloc::boxed::Box;
+use vm;
+use kalloc;
 
 pub static mut CPU: Option<Cpu> = None;
+static mut PID: u32 = 0;
+
+extern "C" {
+    fn trapret();
+    fn forkret();
+}
 
 pub struct Cpu {
     // does this need to be a pointer?
@@ -34,6 +43,7 @@ impl Cpu {
     }
 }
 
+#[derive(Copy, Clone, Default)]
 pub struct Context {
     edi: u32,
     esi: u32,
@@ -44,18 +54,38 @@ pub struct Context {
 
 pub struct Process {
     size: usize, // Size of process memory (bytes)
-    pgdir: *const u32, // Page table
-    kstack: *const u8, // Bottom of kernel stack for this process
+    pgdir: Box<vm::PageDir>, // Page table
+    kstack: Box<InitKstack>, // Bottom of kernel stack for this process
     state: ProcState, // Process state
     pid: u32, // Process ID
-    parent: *const Process, // Parent process
-    trapframe: *const TrapFrame, // Trap frame for current syscall
-    context: *const Context, // swtch() here to run process
-    chan: *const u8, // If non-zero, sleeping on chan. TODO figure out type
+    parent: u32, // Parent process
+    trapframe: TrapFrame, // Trap frame for current syscall
+    context: Context, // swtch() here to run process
+    //chan: Option<*const u8>, // If non-zero, sleeping on chan. TODO figure out type
     killed: bool, // If non-zero, have been killed
-    ofile: *const [file::File; file::NOFILE], // Open files
-    cwd: *const file::Inode, // Current directory
-    name: [char; 16], // Process name (debugging)
+                  // ofile: *const [file::File; file::NOFILE], // Open files
+                  //cwd: file::Inode, // Current directory
+                  //name: [char; 16], // Process name (debugging)
+}
+
+impl Process {
+    fn new(new_pid: u32, parent_pid: u32, pagedir: Box<vm::PageDir>) -> Process {
+        let mut stack: Box<InitKstack> = Box::new(Default::default());
+        stack.trapret = trapret as u32;
+        stack.context = Default::default();
+        stack.context.eip = forkret as u32;
+        Process {
+            size: kalloc::PGSIZE,
+            pgdir: pagedir,
+            trapframe: stack.tf,
+            context: stack.context,
+            kstack: stack,
+            pid: new_pid,
+            parent: parent_pid,
+            killed: false,
+            state: ProcState::Embryo,
+        }
+    }
 }
 
 pub enum ProcState {
@@ -67,7 +97,24 @@ pub enum ProcState {
     Zombie,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct InitKstack {
+    // Padding forces struct to be size of a page allocation
+    // Sadly Rust doesn't support parameterizing types over integers yet, and Copy is only
+    // implemented for arrays up to size 32, so padding is done in this weird way
+    padding1: [[u8; 32]; 32],
+    padding2: [[u8; 32]; 32],
+    padding3: [[u8; 32]; 32],
+    padding4: [[u8; 32]; 28],
+    padding5: [u8; 28],
+    context: Context,
+    trapret: u32,
+    tf: TrapFrame,
+}
 
+
+#[derive(Copy, Clone, Default)]
 struct TrapFrame {
     // registers as pushed by pusha
     edi: u32,
