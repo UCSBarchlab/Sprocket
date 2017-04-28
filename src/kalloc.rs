@@ -58,6 +58,11 @@ pub unsafe fn kinit1(vstart: *mut u8, vend: *mut u8) {
     free_range(vstart, vend);
 }
 
+pub unsafe fn kinit2(vstart: *mut u8, vend: *mut u8) {
+    free_range(vstart, vend);
+    KMEM.use_lock = true;
+}
+
 unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
     let mut p = page_roundup_mut(vstart);
     while p.offset(PGSIZE as isize) <= vend {

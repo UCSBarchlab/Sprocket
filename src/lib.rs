@@ -56,6 +56,12 @@ pub extern "C" fn main() {
     println!("Initializing PIC");
     picirq::picinit();
 
+    println!("Finishing allocator initialization");
+    unsafe {
+        kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
+                       kalloc::PHYSTOP.to_virt().addr() as *mut u8);
+    }
+
 
     loop {}
 }
