@@ -99,7 +99,7 @@ pub const PDXSHIFT: usize = 22;
 pub const PTXSHIFT: usize = 12;
 
 /// GDT segment descriptor indices
-enum Segment {
+pub enum Segment {
     Null = 0,
     KCode = 1,
     KData = 2,

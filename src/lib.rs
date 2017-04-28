@@ -36,8 +36,7 @@ mod console;
 mod timer;
 
 use vm::{PhysAddr, Address};
-
-const KERNBASE: u32 = 0x80000000;
+pub use traps::trap;
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -55,6 +54,7 @@ pub extern "C" fn main() {
     vm::seginit();
     println!("Initializing PIC");
     picirq::picinit();
+    traps::trap_vector_init();
 
     println!("Finishing allocator initialization");
     unsafe {
