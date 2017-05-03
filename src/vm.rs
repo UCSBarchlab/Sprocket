@@ -6,6 +6,7 @@ use process;
 use x86::shared::segmentation::SegmentDescriptor;
 use x86::shared::segmentation as seg;
 use x86::shared::dtables;
+use x86::shared::descriptor;
 use x86::shared;
 use mmu;
 
@@ -212,6 +213,25 @@ impl Address for PhysAddr {
 
 pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
+// Initialize a SegmentDescriptor in a manner compatible with xv6
+fn seg(base: usize,
+       limit: usize,
+       ty: descriptor::Flags,
+       ring: shared::PrivilegeLevel)
+       -> SegmentDescriptor {
+    SegmentDescriptor {
+        limit1: (limit & 0xffff) as u16,
+        base1: base as u16,
+        base2: ((base & 0xff0000) >> 16) as u8,
+        base3: ((base & 0xff000000) >> 24) as u8,
+        access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT |
+                descriptor::FLAGS_TYPE_SEG | ty,
+        limit2_flags: seg::FLAGS_DB | seg::FLAGS_G |
+                      seg::Flags::from_limit2(((0xffffffff & 0xF0000) >> 16) as u8),
+    }
+
+}
+
 pub fn seginit() {
 
     // Unsafe primarily because of global state manipulation.
@@ -224,30 +244,27 @@ pub fn seginit() {
 
         if let Some(ref mut cpu) = process::CPU {
             cpu.gdt[Segment::Null as usize] = SegmentDescriptor::NULL;
-            cpu.gdt[Segment::KCode as usize] =
-                SegmentDescriptor::new(0,
-                                       0xffffffff,
-                                       seg::Type::Code(seg::CODE_READ),
-                                       false,
-                                       shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::KData as usize] =
-                SegmentDescriptor::new(0,
-                                       0xffffffff,
-                                       seg::Type::Data(seg::DATA_WRITE),
-                                       false,
-                                       shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::UCode as usize] =
-                SegmentDescriptor::new(0,
-                                       0xffffffff,
-                                       seg::Type::Code(seg::CODE_READ),
-                                       false,
-                                       shared::PrivilegeLevel::Ring3);
-            cpu.gdt[Segment::UData as usize] =
-                SegmentDescriptor::new(0,
-                                       0xffffffff,
-                                       seg::Type::Data(seg::DATA_WRITE),
-                                       false,
-                                       shared::PrivilegeLevel::Ring3);
+            cpu.gdt[Segment::KCode as usize] = seg(0x00000000,
+                                                   0xffffffff,
+                                                   descriptor::FLAGS_TYPE_CODE |
+                                                   descriptor::FLAGS_TYPE_SEG_C_READ,
+                                                   shared::PrivilegeLevel::Ring0);
+            cpu.gdt[Segment::KData as usize] = seg(0x00000000,
+                                                   0xffffffff,
+                                                   descriptor::FLAGS_TYPE_DATA |
+                                                   descriptor::FLAGS_TYPE_SEG_D_RW,
+                                                   shared::PrivilegeLevel::Ring0);
+            cpu.gdt[Segment::UCode as usize] = seg(0x00000000,
+                                                   0xffffffff,
+                                                   descriptor::FLAGS_TYPE_CODE |
+                                                   descriptor::FLAGS_TYPE_SEG_C_READ,
+                                                   shared::PrivilegeLevel::Ring3);
+            cpu.gdt[Segment::UData as usize] = seg(0x00000000,
+                                                   0xffffffff,
+                                                   descriptor::FLAGS_TYPE_DATA |
+                                                   descriptor::FLAGS_TYPE_SEG_D_RW,
+                                                   shared::PrivilegeLevel::Ring3);
+
 
             let d = dtables::DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
             dtables::lgdt(&d);
