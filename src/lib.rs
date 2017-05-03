@@ -21,6 +21,8 @@ extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+mod console;
 pub mod kalloc;
 mod flags;
 mod vm;
@@ -31,12 +33,11 @@ mod file;
 mod fs;
 mod picirq;
 mod uart;
-#[macro_use]
-mod console;
 mod timer;
 
 use vm::{PhysAddr, Address};
 pub use traps::trap;
+use x86::shared::irq;
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -52,15 +53,24 @@ pub extern "C" fn main() {
     vm::kvmalloc();
     println!("Initializing kernel segments");
     vm::seginit();
-    println!("Initializing PIC");
+    println!("Configuring PIC");
     picirq::picinit();
+    println!("Setting up interrupt descriptor table");
     traps::trap_vector_init();
+    //    timer::timerinit();
+    println!("Loading new interrupt descriptor table");
+    traps::idtinit();
 
-    println!("Finishing allocator initialization");
-    unsafe {
-        kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
-                       kalloc::PHYSTOP.to_virt().addr() as *mut u8);
-    }
+
+
+    //unsafe {
+    //    kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
+    //                   kalloc::PHYSTOP.to_virt().addr() as *mut u8);
+    //}
+    //println!("Finishing allocator initialization");
+
+    println!("Launching scheduler...");
+    process::scheduler();
 
 
     loop {}
@@ -72,7 +82,8 @@ pub extern "C" fn main() {
 pub extern "C" fn panic_fmt() -> ! {
     println!("Panic! An unrecoverable error occurred");
     unsafe {
-        asm!("hlt");
+        irq::disable();
+        x86::shared::halt();
     }
     loop {}
 }

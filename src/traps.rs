@@ -1,7 +1,9 @@
 use x86::bits32::irq::IdtEntry;
 use x86::shared::paging::VAddr;
+use x86::shared::dtables::{lidt, DescriptorTablePointer};
 use x86::shared::PrivilegeLevel;
 use vm::Segment;
+use process;
 
 // x86 trap and interrupt constants.
 
@@ -45,6 +47,7 @@ extern "C" {
     static mut vectors: [u32; 256];
 }
 
+//pub static mut IDT: [IdtEntry; 256] = [IdtEntry::MISSING; 256];
 pub static mut IDT: [IdtEntry; 256] = [IdtEntry::MISSING; 256];
 
 pub fn trap_vector_init() {
@@ -54,7 +57,7 @@ pub fn trap_vector_init() {
             *interrupt = IdtEntry::new(VAddr::from_usize(*vec as usize),
                                        (Segment::KCode as u16) << 3,
                                        PrivilegeLevel::Ring0,
-                                       false);
+                                       true);
         }
         IDT[T_SYSCALL as usize] = IdtEntry::new(VAddr::from_usize(vectors[T_SYSCALL as usize] as
                                                                   usize),
@@ -64,5 +67,24 @@ pub fn trap_vector_init() {
     }
 }
 
+pub fn idtinit() {
+    unsafe {
+        // unsafe because we're calling asm and accessing global mutable state
+        lidt(&DescriptorTablePointer::new_idtp(&IDT))
+    }
+}
+
 #[no_mangle]
-pub extern "C" fn trap() {}
+pub extern "C" fn trap(tf: &process::TrapFrame) {
+    // TODO implement trap handling
+    unsafe { irq::disable() };
+    use x86::shared::irq;
+    use console;
+    let ch = {
+        console::CONSOLE.lock().read_byte()
+    };
+
+    if let Some(c) = ch {
+        print!("{}", c as char);
+    }
+}

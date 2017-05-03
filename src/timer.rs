@@ -19,7 +19,7 @@ const TIMER_SEL0: u8 = 0x00; // select counter 0
 const TIMER_RATEGEN: u8 = 0x04; // mode 2, rate generator
 const TIMER_16BIT: u8 = 0x30; // r/w counter 16 bits, LSB first
 
-fn timerinit() {
+pub fn timerinit() {
     unsafe {
         io::outb(TIMER_MODE, TIMER_SEL0 | TIMER_RATEGEN | TIMER_16BIT);
         io::outb(IO_TIMER1, (timer_div!(100) % 256) as u8);

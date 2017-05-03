@@ -3,6 +3,7 @@ use mmu;
 pub use x86::shared::segmentation::SegmentDescriptor;
 pub use x86::bits32::task::TaskStateSegment;
 pub use x86::shared::descriptor;
+pub use x86::shared::irq;
 use core;
 use alloc::boxed::Box;
 use vm;
@@ -115,37 +116,43 @@ pub struct InitKstack {
 
 
 #[derive(Copy, Clone, Default)]
-struct TrapFrame {
+#[repr(C)]
+pub struct TrapFrame {
     // registers as pushed by pusha
-    edi: u32,
-    esi: u32,
-    ebp: u32,
-    oesp: u32, // useless & ignored
-    ebx: u32,
-    edx: u32,
-    ecx: u32,
-    eax: u32,
+    pub edi: u32,
+    pub esi: u32,
+    pub ebp: u32,
+    pub oesp: u32, // useless & ignored
+    pub ebx: u32,
+    pub edx: u32,
+    pub ecx: u32,
+    pub eax: u32,
 
     // rest of trap frame
-    gs: u16,
-    padding1: u16,
-    fs: u16,
-    padding2: u16,
-    es: u16,
-    padding3: u16,
-    ds: u16,
-    padding4: u16,
-    trapno: u32,
+    pub gs: u16,
+    pub padding1: u16,
+    pub fs: u16,
+    pub padding2: u16,
+    pub es: u16,
+    pub padding3: u16,
+    pub ds: u16,
+    pub padding4: u16,
+    pub trapno: u32,
 
     // below here defined by x86 hardware
-    err: u32,
-    eip: u32,
-    cs: u16,
-    padding5: u16,
-    eflags: u32,
+    pub err: u32,
+    pub eip: u32,
+    pub cs: u16,
+    pub padding5: u16,
+    pub eflags: u32,
 
     // below here only when crossing rings, such as from user to kernel
-    esp: u32,
-    ss: u16,
-    padding6: u16,
+    pub esp: u32,
+    pub ss: u16,
+    pub padding6: u16,
+}
+
+pub fn scheduler() -> ! {
+    unsafe { irq::enable() };
+    loop {}
 }

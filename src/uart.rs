@@ -62,4 +62,15 @@ impl Uart {
     }
 
     fn microdelay(_: i32) {}
+
+    pub fn read_byte(&mut self) -> Option<u8> {
+        unsafe {
+            if (io::inb(COM1 + 5) & 0x01) == 0 {
+                None
+            } else {
+                Some(io::inb(COM1))
+            }
+        }
+
+    }
 }
