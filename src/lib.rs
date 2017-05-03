@@ -63,11 +63,11 @@ pub extern "C" fn main() {
 
 
 
-    //unsafe {
-    //    kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
-    //                   kalloc::PHYSTOP.to_virt().addr() as *mut u8);
-    //}
-    //println!("Finishing allocator initialization");
+    println!("Finishing allocator initialization");
+    unsafe {
+        kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
+                       kalloc::PHYSTOP.to_virt().addr() as *mut u8);
+    }
 
     println!("Launching scheduler...");
     process::scheduler();

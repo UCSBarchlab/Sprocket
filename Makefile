@@ -42,7 +42,7 @@ qemu: fs.img cofflos.img
 
 qemu-dbg: fs.img cofflos.img
 	#qemu-system-i386  $(QEMUOPTS) -nographic -d int -no-reboot
-	qemu-system-i386  $(QEMUOPTS) -d int -no-reboot -serial stdio
+	qemu-system-i386  $(QEMUOPTS) -d int -no-reboot -serial mon:stdio -nographic
 
 qemu-console: fs.img cofflos.img
 	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
