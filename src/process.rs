@@ -8,6 +8,7 @@ use core;
 use alloc::boxed::Box;
 use vm;
 use kalloc;
+use traps;
 
 pub static mut CPU: Option<Cpu> = None;
 static mut PID: u32 = 0;
@@ -137,7 +138,7 @@ pub struct TrapFrame {
     pub padding3: u16,
     pub ds: u16,
     pub padding4: u16,
-    pub trapno: u32,
+    pub trapno: traps::Interrupt,
 
     // below here defined by x86 hardware
     pub err: u32,

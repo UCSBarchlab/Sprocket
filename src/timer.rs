@@ -24,6 +24,6 @@ pub fn timerinit() {
         io::outb(TIMER_MODE, TIMER_SEL0 | TIMER_RATEGEN | TIMER_16BIT);
         io::outb(IO_TIMER1, (timer_div!(100) % 256) as u8);
         io::outb(IO_TIMER1, (timer_div!(100) / 256) as u8);
-        picirq::picenable(traps::IRQ_TIMER as i32);
+        picirq::picenable(traps::TIMER_IRQ as i32);
     }
 }
