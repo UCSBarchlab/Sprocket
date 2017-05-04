@@ -12,6 +12,8 @@ pub const T_IRQ0: u8 = 32; // IRQ 0 corresponds to int T_IRQ
 pub const TIMER_IRQ: u8 = 0; // IRQ 0 corresponds to int T_IRQ
 pub const COM1_IRQ: u8 = 4; // IRQ 0 corresponds to int T_IRQ
 
+pub const FLAG_INT_ENABLED: u32 = 0x200;
+
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum Interrupt {

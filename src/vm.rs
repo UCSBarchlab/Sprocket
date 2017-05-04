@@ -311,6 +311,23 @@ fn switchkvm() {
     }
 }
 
+
+pub fn inituvm(pgdir: &mut PageDir, init: &[u8]) {
+    assert!(init.len() >= kalloc::PGSIZE,
+            "inituvm: size larger than a page");
+
+    let mut mem = box [0 as u8; 4096];
+
+    mem[..init.len()].copy_from_slice(init);
+    map_pages(pgdir,
+              VirtAddr::new(0),
+              kalloc::PGSIZE,
+              VirtAddr::new(Box::into_raw(mem) as usize).to_phys(),
+              USER | WRITABLE)
+        .expect("inituvm: Map pages failed");
+
+}
+
 /// Given page directory entries, Create PTEs for virtual addresses starting at va.
 fn map_pages(p: &mut [PageDirEntry],
              va: VirtAddr,

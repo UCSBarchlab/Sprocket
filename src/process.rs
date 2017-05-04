@@ -4,6 +4,7 @@ pub use x86::shared::segmentation::SegmentDescriptor;
 pub use x86::bits32::task::TaskStateSegment;
 pub use x86::shared::descriptor;
 pub use x86::shared::irq;
+use x86::shared::PrivilegeLevel;
 use core;
 use alloc::boxed::Box;
 use vm;
@@ -16,6 +17,8 @@ static mut PID: u32 = 0;
 extern "C" {
     fn trapret();
     fn forkret();
+    static _binary_initcode_start: u8;
+    static _binary_initcode_size: u8;
 }
 
 pub struct Cpu {
@@ -79,7 +82,7 @@ impl Process {
         Process {
             size: kalloc::PGSIZE,
             pgdir: pagedir,
-            trapframe: stack.tf,
+            trapframe: stack.trapframe,
             context: stack.context,
             kstack: stack,
             pid: new_pid,
@@ -112,7 +115,7 @@ pub struct InitKstack {
     padding5: [u8; 28],
     context: Context,
     trapret: u32,
-    tf: TrapFrame,
+    trapframe: TrapFrame,
 }
 
 
@@ -156,4 +159,28 @@ pub struct TrapFrame {
 pub fn scheduler() -> ! {
     unsafe { irq::enable() };
     loop {}
+}
+
+pub fn userinit() {
+    let pgdir = vm::setupkvm().expect("userinit: out of memory");
+    let mut p = Process::new(1, 0, pgdir);
+    let slice = unsafe {
+        // unsafe because of memory shenanigans
+        core::slice::from_raw_parts(&_binary_initcode_start,
+                                    &_binary_initcode_size as *const _ as usize)
+    };
+    vm::inituvm(&mut p.pgdir, slice);
+    p.size = kalloc::PGSIZE;
+    p.trapframe.cs = (vm::Segment::UCode as u16) << 3 | PrivilegeLevel::Ring3 as u16;
+    p.trapframe.ds = (vm::Segment::UData as u16) << 3 | PrivilegeLevel::Ring3 as u16;
+    p.trapframe.es = p.trapframe.ds;
+    p.trapframe.ss = p.trapframe.ds;
+    p.trapframe.eflags = traps::FLAG_INT_ENABLED;
+    p.trapframe.esp = kalloc::PGSIZE as u32;
+    p.trapframe.eip = 0;
+    p.kstack.trapframe = p.trapframe;
+
+    // TODO: finish once file system is written
+
+
 }

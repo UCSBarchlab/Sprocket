@@ -72,8 +72,6 @@ pub extern "C" fn main() {
     println!("Launching scheduler...");
     process::scheduler();
 
-
-    loop {}
 }
 
 
