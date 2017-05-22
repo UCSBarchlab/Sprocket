@@ -9,6 +9,7 @@ use x86::shared::dtables;
 use x86::shared::descriptor;
 use x86::shared;
 use mmu;
+use process::Process;
 
 
 extern "C" {
@@ -30,7 +31,7 @@ lazy_static! {
     /// Table to define kernel mappings in each process page table
     static ref KMAP: [Kmap; 4] = {
         #[allow(non_snake_case)]
-        let DATA_BEGIN: VirtAddr = unsafe {VirtAddr(&data as *const _ as usize)};
+        let DATA_BEGIN: VirtAddr = VirtAddr(unsafe { &data } as *const _ as usize);
         [
             Kmap {
                 virt: kalloc::KERNBASE,
@@ -214,6 +215,24 @@ impl Address for PhysAddr {
 pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
 // Initialize a SegmentDescriptor in a manner compatible with xv6
+fn seg2(base: usize,
+        limit: usize,
+        ty: descriptor::Flags,
+        ring: shared::PrivilegeLevel)
+        -> SegmentDescriptor {
+    SegmentDescriptor {
+        limit1: ((limit >> 12) & 0xffff) as u16, // should be >> 12
+        base1: (base & 0xffff) as u16,
+        base2: ((base >> 16) & 0xff) as u8,
+        base3: ((base >> 24) & 0xff) as u8,
+        access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT |
+                descriptor::FLAGS_TYPE_SEG | ty,
+        limit2_flags: seg::FLAGS_DB | seg::FLAGS_G | seg::Flags::from_limit2((limit >> 28) as u8), 
+                      // should be limit >> 32
+    }
+
+}
+
 fn seg(base: usize,
        limit: usize,
        ty: descriptor::Flags,
@@ -230,6 +249,22 @@ fn seg(base: usize,
                       seg::Flags::from_limit2(((0xffffffff & 0xF0000) >> 16) as u8),
     }
 
+}
+
+fn seg16(base: usize,
+         limit: usize,
+         ty: descriptor::Flags,
+         ring: shared::PrivilegeLevel)
+         -> SegmentDescriptor {
+
+    SegmentDescriptor {
+        limit1: (limit >> 12 & 0xffff) as u16,
+        base1: (base & 0xffff) as u16,
+        base2: ((base >> 16) & 0xff) as u8,
+        base3: (base >> 24) as u8,
+        access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT | ty,
+        limit2_flags: seg::FLAGS_DB | seg::Flags::from_limit2((limit >> 16) as u8),
+    }
 }
 
 pub fn seginit() {
@@ -304,12 +339,45 @@ pub fn setupkvm() -> Result<Box<PageDir>, ()> {
 
 /// Switch HW page table register (control reg 3) to the kernel page table.  This is used when no process
 /// is running.
-fn switchkvm() {
+pub fn switchkvm() {
+    // unsafe because we're accessing global state, and we're manipulating register CR3
     unsafe {
-        let addr = KPGDIR.to_phys().addr();
-        asm!("mov $0, %cr3" : : "r" (addr) : : "volatile")
+        lcr3(KPGDIR.to_phys());
     }
 }
+
+unsafe fn lcr3(addr: PhysAddr) {
+    asm!("mov $0, %cr3" : : "r" (addr.addr()) : : "volatile");
+}
+
+/*
+fn switchuvm(process: &mut Process) {
+    //pushcli();
+    unsafe {
+
+        if let Some(ref mut cpu) = process::CPU {
+
+            cpu.gdt[Segment::TSS as usize] = seg16(&cpu.ts as *const _ as usize,
+                                                   core::mem::size_of::<SegmentDescriptor>() - 1,
+                                                   descriptor::FLAGS_TYPE_SYS_NATIVE_TSS_AVAILABLE,
+                                                   shared::PrivilegeLevel::Ring0);
+        }
+    }
+
+    /*
+  cpu.gdt[SEG_TSS] = SEG16(STS_T32A, &cpu->ts, sizeof(cpu->ts)-1, 0);
+  cpu.gdt[SEG_TSS].s = 0;
+  cpu.ts.ss0 = SEG_KDATA << 3;
+  cpu.ts.esp0 = (uint)p->kstack + KSTACKSIZE;
+  // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
+  // forbids I/O instructions (e.g., inb and outb) from user space
+  cpu->ts.iomb = (ushort) 0xFFFF;
+  ltr(SEG_TSS << 3);
+  lcr3(V2P(p->pgdir));  // switch to process's address space
+  //popcli();
+  */
+}
+*/
 
 
 pub fn inituvm(pgdir: &mut PageDir, init: &[u8]) {

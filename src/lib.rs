@@ -6,34 +6,39 @@
 #![feature(allocator)]
 #![feature(alloc)]
 #![feature(box_syntax)]
+#![feature(collections)]
 #![allocator]
+#![feature(drop_types_in_const)]
 
 #![allow(dead_code)]
 #![allow(empty_loop)]
 
 extern crate rlibc;
-extern crate linked_list_allocator;
 extern crate spin;
 extern crate alloc;
+extern crate collections;
 extern crate x86;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
-
 #[macro_use]
 mod console;
+#[macro_use]
+mod process;
 pub mod kalloc;
 mod flags;
 mod vm;
 mod traps;
-mod process;
 mod mmu;
 mod file;
 mod fs;
 mod picirq;
 mod uart;
 mod timer;
+//mod sleeplock;
+//mod ide;
+mod buffercache;
 
 use vm::{PhysAddr, Address};
 pub use traps::trap;
@@ -70,8 +75,9 @@ pub extern "C" fn main() {
     }
 
     println!("Launching scheduler...");
-    process::scheduler();
-
+    unsafe {
+        process::CPU.as_mut().unwrap().scheduler();
+    }
 }
 
 

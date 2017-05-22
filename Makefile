@@ -87,8 +87,11 @@ vectors.o: src/vectors.S
 trapasm.o: src/trapasm.S
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o trapasm.o src/trapasm.S
 
-kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode vectors.o trapasm.o
-	@ld -n --gc-section -T kernel.ld -o kernel entry.o vectors.o trapasm.o $(rust_os) -b binary initcode entryother
+swtch.o: src/swtch.S
+	gcc -m32 -gdwarf-2 -Wa,-divide -c -o swtch.o src/swtch.S
+
+kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode vectors.o trapasm.o swtch.o
+	@ld -n --gc-section -T kernel.ld -o kernel entry.o vectors.o trapasm.o swtch.o $(rust_os) -b binary initcode entryother
 	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
 
 -include *.d

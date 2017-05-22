@@ -10,15 +10,23 @@ use alloc::boxed::Box;
 use vm;
 use kalloc;
 use traps;
+use collections::linked_list::LinkedList;
+
+use spin::{Mutex, MutexGuard};
 
 pub static mut CPU: Option<Cpu> = None;
+lazy_static! {
+    static ref PTABLE: Mutex<LinkedList<Process>> = Mutex::new(LinkedList::<Process>::new());
+}
 static mut PID: u32 = 0;
+const FL_IF: u32 = 0x200;
 
 extern "C" {
     fn trapret();
     fn forkret();
     static _binary_initcode_start: u8;
     static _binary_initcode_size: u8;
+    fn swtch(old: *mut *mut Context, new: *mut Context);
 }
 
 pub struct Cpu {
@@ -28,11 +36,10 @@ pub struct Cpu {
     pub gdt: [SegmentDescriptor; mmu::NSEGS], // x86 global descriptor table
     //pub started: bool, // Has the CPU started?
     //pub ncli: i32, // Depth of pushcli nesting.
-    pub intena: bool, // Were interrupts enabled before pushcli?
+    pub int_enabled: bool, // Were interrupts enabled before pushcli?
 
     // Cpu-local storage variables; see below
-    pub cpu: *const Cpu,
-    pub process: *const Process, // The currently-running process.
+    pub process: Option<Process>, // The currently-running process.
 }
 
 impl Cpu {
@@ -41,14 +48,14 @@ impl Cpu {
             scheduler: core::ptr::null(),
             ts: TaskStateSegment::new(),
             gdt: [SegmentDescriptor::NULL; mmu::NSEGS],
-            intena: true,
-            cpu: core::ptr::null(),
-            process: core::ptr::null(),
+            int_enabled: true,
+            process: None,
         }
     }
 }
 
 #[derive(Copy, Clone, Default)]
+#[repr(C)]
 pub struct Context {
     edi: u32,
     esi: u32,
@@ -93,6 +100,7 @@ impl Process {
     }
 }
 
+#[derive(PartialEq)]
 pub enum ProcState {
     Unused,
     Embryo,
@@ -156,11 +164,6 @@ pub struct TrapFrame {
     pub padding6: u16,
 }
 
-pub fn scheduler() -> ! {
-    unsafe { irq::enable() };
-    loop {}
-}
-
 pub fn userinit() {
     let pgdir = vm::setupkvm().expect("userinit: out of memory");
     let mut p = Process::new(1, 0, pgdir);
@@ -183,4 +186,115 @@ pub fn userinit() {
     // TODO: finish once file system is written
 
 
+}
+
+
+//pub fn sleep(
+//
+//    //pub/sub system? need some way to say that process is blocked on something, and then
+//    //later wake it up based on that?  probably use pointers, although it's nasty
+//            )
+//
+impl Cpu {
+    pub fn scheduler(&mut self) -> ! {
+        loop {
+            let mut ptable = PTABLE.lock();
+            unsafe { irq::enable() };
+
+            // scan queue to find runnable process
+            let mut run_idx = ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
+
+            if let Some(idx) = run_idx {
+                // Remove the runnable process from the queue
+                let mut list = ptable.split_off(idx);
+                let mut runnable = list.pop_front().unwrap();
+                let old_proc = self.process.take();
+                ptable.append(&mut list);
+
+                // If we had a process running, append it to ptable
+                if let Some(pr) = old_proc {
+                    ptable.push_back(pr);
+                }
+
+                // vm::switchuvm()
+
+                // prepare to execute new process
+                assert!(runnable.state == ProcState::Runnable);
+                runnable.state = ProcState::Running;
+                self.process = Some(runnable);
+
+                // hideously unsafe because we're context switching with assembly call
+                // probably not a lot we can do here though
+                unsafe {
+                    // actual context switching
+                    swtch(self.scheduler as *mut _,
+                          &mut self.process.as_mut().unwrap().context as *mut _);
+                }
+
+                vm::switchkvm();
+            }
+        }
+    }
+
+    fn reschedule(&mut self) {
+        if let Some(ref mut p) = self.process {
+
+            //  if(cpu->ncli != 1)
+            //    panic("sched locks");
+            assert!(p.state != ProcState::Running);
+            if readeflags() & FL_IF != 0 {
+                panic!("sched interruptible");
+            }
+            let int_enabled = self.int_enabled;
+
+            p.state = ProcState::Sleeping;
+
+            // unsafe because we're calling out to external code
+            unsafe {
+                swtch(&mut (&mut p.context as *mut _), self.scheduler as *mut _);
+            }
+            self.int_enabled = int_enabled;
+        }
+    }
+}
+
+fn readeflags() -> u32 {
+    let eflags: u32;
+    unsafe {
+        asm!("pushfl; popl $0" : "=r" (eflags) : : : "volatile");
+    }
+    return eflags;
+}
+
+pub fn sleep<'a, T>(lock: &'a Mutex<T>) -> MutexGuard<'a, T> {
+    // lock must have been released to make it in here in the first place
+    // do weird context switching stuff
+    //schedule_process();
+    unsafe {
+        CPU.as_mut().unwrap().reschedule();
+    }
+    lock.lock() // possibly get rid of this
+}
+
+#[macro_export]
+macro_rules! until {
+    // in the case where we simply want to stop until the condition is met
+    ($cond: expr, $lock: expr) => {
+        until!($cond, $lock, {})
+    };
+    // else where we have arbitrary code to run after the condition is met
+    ($cond: expr, $lock: expr, $code: expr) => {
+        loop {
+            {
+                // TODO: consider attempting to grab lock, and if locked then sleep
+                if let Some(_) = $lock.try_lock() {
+                    if $cond { // test
+                        $code;
+                        break;
+                    } // release lock and sleep?
+                }
+            }
+            let _ = process::sleep($lock);
+        }
+    }
 }
