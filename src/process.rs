@@ -1,5 +1,5 @@
 use mmu;
-//use file;
+use file;
 pub use x86::shared::segmentation::SegmentDescriptor;
 pub use x86::bits32::task::TaskStateSegment;
 pub use x86::shared::descriptor;
@@ -15,10 +15,9 @@ use collections::linked_list::LinkedList;
 use spin::{Mutex, MutexGuard};
 
 pub static mut CPU: Option<Cpu> = None;
-lazy_static! {
-    static ref PTABLE: Mutex<LinkedList<Process>> = Mutex::new(LinkedList::<Process>::new());
-}
-static mut PID: u32 = 0;
+//lazy_static! {
+//    static ref PTABLE: Mutex<LinkedList<Process>> = Mutex::new(LinkedList::<Process>::new());
+//}
 const FL_IF: u32 = 0x200;
 
 extern "C" {
@@ -31,25 +30,21 @@ extern "C" {
 
 pub struct Cpu {
     // does this need to be a pointer?
-    pub scheduler: *const Context, // swtch() here to enter scheduler
     pub ts: TaskStateSegment, // Used by x86 to find stack for interrupt
     pub gdt: [SegmentDescriptor; mmu::NSEGS], // x86 global descriptor table
     //pub started: bool, // Has the CPU started?
     //pub ncli: i32, // Depth of pushcli nesting.
     pub int_enabled: bool, // Were interrupts enabled before pushcli?
-
-    // Cpu-local storage variables; see below
-    pub process: Option<Process>, // The currently-running process.
+    pub scheduler: Scheduler,
 }
 
 impl Cpu {
     pub fn new() -> Cpu {
         Cpu {
-            scheduler: core::ptr::null(),
             ts: TaskStateSegment::new(),
             gdt: [SegmentDescriptor::NULL; mmu::NSEGS],
             int_enabled: true,
-            process: None,
+            scheduler: Scheduler::new(),
         }
     }
 }
@@ -195,49 +190,73 @@ pub fn userinit() {
 //    //later wake it up based on that?  probably use pointers, although it's nasty
 //            )
 //
-impl Cpu {
-    pub fn scheduler(&mut self) -> ! {
-        loop {
-            let mut ptable = PTABLE.lock();
-            unsafe { irq::enable() };
+impl Cpu {}
 
-            // scan queue to find runnable process
-            let mut run_idx = ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
+pub struct Scheduler {
+    ptable: LinkedList<Process>,
+    current: Option<Process>,
+    scheduler_context: *const Context, // swtch() here to enter scheduler
+    next_pid: u32,
+}
 
-            if let Some(idx) = run_idx {
-                // Remove the runnable process from the queue
-                let mut list = ptable.split_off(idx);
-                let mut runnable = list.pop_front().unwrap();
-                let old_proc = self.process.take();
-                ptable.append(&mut list);
-
-                // If we had a process running, append it to ptable
-                if let Some(pr) = old_proc {
-                    ptable.push_back(pr);
-                }
-
-                // vm::switchuvm()
-
-                // prepare to execute new process
-                assert!(runnable.state == ProcState::Runnable);
-                runnable.state = ProcState::Running;
-                self.process = Some(runnable);
-
-                // hideously unsafe because we're context switching with assembly call
-                // probably not a lot we can do here though
-                unsafe {
-                    // actual context switching
-                    swtch(self.scheduler as *mut _,
-                          &mut self.process.as_mut().unwrap().context as *mut _);
-                }
-
-                vm::switchkvm();
-            }
+impl Scheduler {
+    pub fn new() -> Scheduler {
+        Scheduler {
+            ptable: LinkedList::<Process>::new(),
+            current: None,
+            scheduler_context: core::ptr::null(),
+            next_pid: 1,
         }
     }
 
-    fn reschedule(&mut self) {
-        if let Some(ref mut p) = self.process {
+
+    pub fn scheduler(&mut self) -> ! {
+        loop {
+            unsafe { irq::disable() };
+
+            // scan queue to find runnable process
+            let mut run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
+            if let Some(idx) = run_idx {
+                // Remove the runnable process from the queue
+                let mut list = self.ptable.split_off(idx);
+                let mut runnable = list.pop_front().unwrap();
+                self.ptable.append(&mut list);
+
+                self.switch_to(runnable);
+                // we've returned from that context, so reset to our page tables
+                vm::switchkvm();
+
+            }
+            unsafe { irq::enable() };
+        }
+    }
+
+    fn switch_to(&mut self, mut runnable: Process) {
+        unsafe {
+
+            assert!(self.current.is_none());
+            assert!(runnable.state == ProcState::Runnable);
+            runnable.state = ProcState::Running;
+            self.current = Some(runnable);
+
+            // hideously unsafe because we're context switching with assembly call
+            // probably not a lot we can do here though
+
+            // vm::switchuvm()
+            unsafe {
+                // actual context switching
+                swtch(self.scheduler_context as *mut _,
+                      &mut self.current.as_mut().unwrap().context as *mut _);
+            }
+            // put process back on the run queue
+            self.ptable.push_back(self.current.take().expect("Current process not found!"));
+
+        }
+    }
+
+    // sched
+    fn reschedule(&mut self, cpu: &mut Cpu) {
+        if let Some(ref mut p) = self.current {
 
             //  if(cpu->ncli != 1)
             //    panic("sched locks");
@@ -245,15 +264,18 @@ impl Cpu {
             if readeflags() & FL_IF != 0 {
                 panic!("sched interruptible");
             }
-            let int_enabled = self.int_enabled;
+            let int_enabled = cpu.int_enabled;
 
             p.state = ProcState::Sleeping;
 
             // unsafe because we're calling out to external code
             unsafe {
-                swtch(&mut (&mut p.context as *mut _), self.scheduler as *mut _);
+                swtch(&mut (&mut p.context as *mut _),
+                      self.scheduler_context as *mut _);
             }
-            self.int_enabled = int_enabled;
+            cpu.int_enabled = int_enabled;
+        } else {
+            panic!("Called reschedule() with no process running!");
         }
     }
 }
@@ -271,7 +293,7 @@ pub fn sleep<'a, T>(lock: &'a Mutex<T>) -> MutexGuard<'a, T> {
     // do weird context switching stuff
     //schedule_process();
     unsafe {
-        CPU.as_mut().unwrap().reschedule();
+        //CPU.as_mut().unwrap().reschedule();
     }
     lock.lock() // possibly get rid of this
 }
