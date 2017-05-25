@@ -12,17 +12,16 @@ use kalloc;
 use traps;
 use collections::linked_list::LinkedList;
 
-use spin::{Mutex, MutexGuard};
-
 pub static mut CPU: Option<Cpu> = None;
+pub static mut SCHEDULER: Option<Scheduler> = None;
 //lazy_static! {
 //    static ref PTABLE: Mutex<LinkedList<Process>> = Mutex::new(LinkedList::<Process>::new());
 //}
 const FL_IF: u32 = 0x200;
 
 extern "C" {
-    fn trapret();
-    fn forkret();
+    fn trapret(); // implement this later
+    fn forkret(); // todo: implement later.  must enable interrupts again
     static _binary_initcode_start: u8;
     static _binary_initcode_size: u8;
     fn swtch(old: *mut *mut Context, new: *mut Context);
@@ -70,9 +69,10 @@ pub struct Process {
     context: Context, // swtch() here to run process
     //chan: Option<*const u8>, // If non-zero, sleeping on chan. TODO figure out type
     killed: bool, // If non-zero, have been killed
-                  // ofile: *const [file::File; file::NOFILE], // Open files
-                  //cwd: file::Inode, // Current directory
-                  //name: [char; 16], // Process name (debugging)
+    // ofile: *const [file::File; file::NOFILE], // Open files
+    //cwd: file::Inode, // Current directory
+    //name: [char; 16], // Process name (debugging)
+    channel: Option<usize>,
 }
 
 impl Process {
@@ -91,6 +91,7 @@ impl Process {
             parent: parent_pid,
             killed: false,
             state: ProcState::Embryo,
+            channel: None,
         }
     }
 }
@@ -214,12 +215,12 @@ impl Scheduler {
         loop {
             unsafe { irq::disable() };
 
-            // scan queue to find runnable process
-            let mut run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
+            // scan queue to find runnable process (if any exist)
+            let run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
             if let Some(idx) = run_idx {
                 // Remove the runnable process from the queue
                 let mut list = self.ptable.split_off(idx);
-                let mut runnable = list.pop_front().unwrap();
+                let runnable = list.pop_front().unwrap();
                 self.ptable.append(&mut list);
 
                 self.switch_to(runnable);
@@ -232,26 +233,22 @@ impl Scheduler {
     }
 
     fn switch_to(&mut self, mut runnable: Process) {
+        assert!(self.current.is_none());
+        assert!(runnable.state == ProcState::Runnable);
+        runnable.state = ProcState::Running;
+        self.current = Some(runnable);
+
+        // hideously unsafe because we're context switching with assembly call
+        // probably not a lot we can do here though
+
+        // vm::switchuvm()
         unsafe {
-
-            assert!(self.current.is_none());
-            assert!(runnable.state == ProcState::Runnable);
-            runnable.state = ProcState::Running;
-            self.current = Some(runnable);
-
-            // hideously unsafe because we're context switching with assembly call
-            // probably not a lot we can do here though
-
-            // vm::switchuvm()
-            unsafe {
-                // actual context switching
-                swtch(self.scheduler_context as *mut _,
-                      &mut self.current.as_mut().unwrap().context as *mut _);
-            }
-            // put process back on the run queue
-            self.ptable.push_back(self.current.take().expect("Current process not found!"));
-
+            // actual context switching
+            swtch(self.scheduler_context as *mut _,
+                  &mut self.current.as_mut().unwrap().context as *mut _);
         }
+        // put process back on the run queue
+        self.ptable.push_back(self.current.take().expect("Current process not found!"));
     }
 
     // sched
@@ -278,6 +275,36 @@ impl Scheduler {
             panic!("Called reschedule() with no process running!");
         }
     }
+
+    /// Allows a thread to suspend itself in order to allow other execution to continue
+    pub fn sleep(&mut self, channel: usize) {
+        {
+            let p = self.current.as_mut().expect("Expected to call sleep from a thread!");
+            p.channel = Some(channel);
+            p.state = ProcState::Sleeping;
+        }
+
+        self.reschedule(unsafe { CPU.as_mut().unwrap() });
+
+        self.current.as_mut().expect("Expected to call sleep from a thread!").channel = None;
+    }
+
+    pub fn yield_thread(&mut self) {
+        {
+            let p = self.current.as_mut().expect("Expected to call yield from a thread!");
+            p.state = ProcState::Runnable;
+        }
+        self.reschedule(unsafe { CPU.as_mut().unwrap() });
+    }
+
+    /// Marks all threads that are blocked on channel as runnable
+    pub fn wake(&mut self, channel: usize) {
+        for p in self.ptable
+            .iter_mut()
+            .filter(|p| p.state == ProcState::Sleeping && p.channel == Some(channel)) {
+            p.state = ProcState::Runnable;
+        }
+    }
 }
 
 fn readeflags() -> u32 {
@@ -288,35 +315,23 @@ fn readeflags() -> u32 {
     return eflags;
 }
 
-pub fn sleep<'a, T>(lock: &'a Mutex<T>) -> MutexGuard<'a, T> {
-    // lock must have been released to make it in here in the first place
-    // do weird context switching stuff
-    //schedule_process();
-    unsafe {
-        //CPU.as_mut().unwrap().reschedule();
-    }
-    lock.lock() // possibly get rid of this
-}
-
 #[macro_export]
 macro_rules! until {
     // in the case where we simply want to stop until the condition is met
-    ($cond: expr, $lock: expr) => {
-        until!($cond, $lock, {})
+    ($cond: expr) => {
+        until!($cond, {})
     };
     // else where we have arbitrary code to run after the condition is met
-    ($cond: expr, $lock: expr, $code: expr) => {
+    ($cond: expr, $code: expr) => {
         loop {
             {
                 // TODO: consider attempting to grab lock, and if locked then sleep
-                if let Some(_) = $lock.try_lock() {
                     if $cond { // test
                         $code;
                         break;
                     } // release lock and sleep?
-                }
             }
-            let _ = process::sleep($lock);
+            unsafe { SCHEDULER.as_mut().unwrap().reschedule(CPU.as_mut().unwrap()) };
         }
     }
 }

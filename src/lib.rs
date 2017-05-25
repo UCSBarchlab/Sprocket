@@ -76,7 +76,8 @@ pub extern "C" fn main() {
 
     println!("Launching scheduler...");
     unsafe {
-        process::CPU.as_mut().unwrap().scheduler();
+        process::SCHEDULER = Some(process::Scheduler::new());
+        process::SCHEDULER.as_mut().unwrap().scheduler();
     }
 }
 
