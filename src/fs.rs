@@ -4,7 +4,7 @@ use slice_cast;
 pub const NDIRECT: usize = 64;
 pub const BLOCKSIZE: usize = 512;
 
-pub const ROOT_INODE: u32 = 0;
+pub const ROOT_INUM: u32 = 0;
 
 pub const BLOCKADDR_SIZE: usize = 4; // block address size in bytes.  32-bit
 
@@ -12,7 +12,7 @@ pub const INDIRECT_PER_BLOCK: usize = BLOCKSIZE / BLOCKADDR_SIZE;
 
 // Rust doesn't support compile-time sizeof, so we manually compute this :(
 pub const INODE_SIZE: usize = 62;
-pub const NUM_INODES: usize = 10000;
+pub const NUM_INODES: u32 = 10000;
 
 pub const DIRNAME_SIZE: usize = 254;
 
@@ -23,6 +23,16 @@ macro_rules! INODE_SIZE {
     {} => {::core::mem::size_of::<Inode>()}
 }
 
+macro_rules! INODES_PER_BLOCK {
+    {} => {BLOCKSIZE / INODE_SIZE!()}
+}
+
+// given an inumber, which block does the inode live in?
+macro_rules! IBLOCK {
+    {$i: expr, $sb: expr} => { $sb.inode_start + $i /((BLOCKSIZE / INODE_SIZE!()) as u32) }
+}
+
+
 pub struct FileSystem {
     disk: ide::Disk,
 }
@@ -32,10 +42,15 @@ impl FileSystem {
 
         assert!(inode.type_ != InodeType::Unused);
 
-        let inodes_per_block = BLOCKSIZE / INODE_SIZE!();
-        let mut block: [u8; 512] = [0; 512];
+        // Read superblock to get the ilist start
+        let mut sb_buf = [0; 512];
+        self.disk.read(&mut sb_buf, device, SUPERBLOCK_ADDR)?;
+        let sb = buffer_to_sb(&mut sb_buf);
 
-        for blockno in 1..(NUM_INODES / inodes_per_block) + 1 {
+        let inodes_per_block: u32 = (BLOCKSIZE / INODE_SIZE!()) as u32;
+        let mut block: [u8; ide::SECTOR_SIZE] = [0; ide::SECTOR_SIZE];
+
+        for blockno in sb.inode_start..(NUM_INODES / inodes_per_block) + 1 {
             self.disk.read(&mut block, device, blockno as u32)?;
             // unsafe because we're playing a dangerous game with types and memory
 
@@ -50,7 +65,7 @@ impl FileSystem {
             }
 
             if let Some(i) = inum {
-                self.disk.write(&block, device, blockno as u32)?; // TODO: weird pointer aliasing stuff, maybe reconsider
+                self.disk.write(&block, device, blockno as u32)?;
                 return Ok(i as u32);
             }
 
@@ -59,14 +74,52 @@ impl FileSystem {
         Err(())
     }
 
-    // TODO: figure out if there's a way to cast slices around that isn't hideously unsafe
-    // since this doesn't do any kind of borrowck/lifetime analysis and I can do all sorts of dumb
-    // aliasing things
+    fn read_inode(&mut self, device: u32, inum: u32) -> Result<Inode, ()> {
+
+        assert!(inum <= NUM_INODES);
+        // read superblock to get list start
+        let mut sb_buf = [0; 512];
+        self.disk.read(&mut sb_buf, device, SUPERBLOCK_ADDR)?;
+        let superblock = buffer_to_sb(&mut sb_buf);
+
+        // read block containing the inode
+        let mut buf = [0; 512];
+        self.disk.read(&mut buf, device, IBLOCK!(inum, superblock) as u32)?;
+
+        {
+            let inodes: &mut [Inode] = unsafe { slice_cast::cast_mut(&mut buf) };
+            let offset = (inum as usize) % INODES_PER_BLOCK!();
+            Ok(inodes[offset])
+        }
+    }
+
+    fn update_inode(&mut self, inum: u32, inode: &Inode) -> Result<(), ()> {
+        // read superblock to get list start
+        let mut sb_buf = [0; 512];
+        self.disk.read(&mut sb_buf, inode.device, SUPERBLOCK_ADDR)?;
+        let superblock = buffer_to_sb(&mut sb_buf);
+
+        // read block containing the inode
+        let mut buf = [0; 512];
+        self.disk.read(&mut buf, inode.device, IBLOCK!(inum, superblock) as u32)?;
+
+        {
+            let inodes: &mut [Inode] = unsafe { slice_cast::cast_mut(&mut buf) };
+            let offset = (inum as usize) % INODES_PER_BLOCK!();
+            inodes[offset] = *inode;
+        }
+
+        // write back ilist block with the updated inode
+        self.disk.write(&buf, inode.device, IBLOCK!(inum, superblock) as u32)?;
+
+        Ok(())
+    }
+
     fn alloc_block(&mut self, device: u32) -> Result<u32, ()> {
         let mut block: [u8; 512] = [0; 512];
 
-        self.disk.read(&mut block, device, SUPERBLOCK_ADDR)?; // read superblock to get freelist head
-
+        // read superblock to get freelist head
+        self.disk.read(&mut block, device, SUPERBLOCK_ADDR)?;
 
         // unsafe because of pointer and type shenanigans
         let head_addr: u32 = unsafe { &mut *(block.as_mut_ptr() as *mut SuperBlock) }
@@ -126,6 +179,14 @@ impl FileSystem {
             }
         }
     }
+
+    fn free_inode(&mut self, _device: u32, _inumber: u32) -> Result<(), ()> {
+        unimplemented!();
+    }
+
+    fn free_block(&mut self, _device: u32, _blockno: u32) -> Result<(), ()> {
+        unimplemented!();
+    }
 }
 
 // prevent weird aliasing violations by forcing borrow and lifetime with a function
@@ -155,6 +216,7 @@ enum InodeType {
 #[derive(Copy)]
 pub struct Inode {
     type_: InodeType,
+    device: u32,
     major: u16,
     minor: u16,
     size: u32,
@@ -174,6 +236,7 @@ pub const UNUSED_INODE: Inode = Inode {
     major: 0,
     minor: 0,
     size: 0,
+    device: 0,
     blocks: [0; NDIRECT],
 };
 
