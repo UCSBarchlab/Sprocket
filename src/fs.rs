@@ -1,5 +1,6 @@
 use ide;
 use slice_cast;
+use core::num::Wrapping;
 
 pub const NDIRECT: usize = 64;
 pub const BLOCKSIZE: usize = 512;
@@ -186,6 +187,67 @@ impl FileSystem {
 
     fn free_block(&mut self, _device: u32, _blockno: u32) -> Result<(), ()> {
         unimplemented!();
+    }
+
+    fn dir_add(&mut self, _inode: &mut Inode, _name: &[u8], _target_inum: u32) -> Result<(), ()> {
+        unimplemented!();
+    }
+
+    fn dir_lookup(&mut self,
+                  _inode: &mut Inode,
+                  _name: &[u8],
+                  _target_inum: u32)
+                  -> Result<(), ()> {
+        assert!(_inode.type_ == InodeType::Directory);
+        unimplemented!();
+    }
+
+    fn bmap(&mut self, inode: &mut Inode, blockno: u32) -> Result<u32, ()> {
+        let addr = inode.blocks[blockno as usize];
+        if addr == UNUSED_BLOCKADDR {
+            inode.blocks[blockno as usize] = self.alloc_block(inode.device)?;
+        }
+        Ok(addr)
+    }
+
+    fn read(&mut self, inode: &mut Inode, dst_buf: &mut [u8], offset: u32) -> Result<usize, ()> {
+        match inode.type_ {
+            InodeType::File | InodeType::Directory => {
+                let mut len = dst_buf.len() as u32;
+                // Don't allow reading past end of file, or reading large amount that would cause
+                // an overflow
+                if offset > inode.size || (Wrapping(offset) + Wrapping(len)).0 < offset {
+                    return Err(());
+                }
+
+                // only read up to the end of the file
+                if offset + len > inode.size {
+                    len = inode.size - offset;
+                }
+
+                // for 0th block, copy from (offset % BLOCKSIZE, BLOCKSIZE)
+                // for intermediate blocks, we can copy BLOCKSIZE at a time
+                // for last block, copy from block from (0, dst_buf.len() - cursor).
+
+                // for the first block, we copy only from after the offset
+                let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
+                let mut tmp_buf = [0; BLOCKSIZE];
+                self.disk.read(&mut tmp_buf, inode.device, blockaddr)?;
+                for (buf, tmp) in dst_buf.iter_mut()
+                    .zip(tmp_buf[(offset as usize) % BLOCKSIZE..].iter()) {
+                    *buf = *tmp;
+                }
+
+                // now, copy a block at a time, truncating the last block as necessary
+                for mut chunk in dst_buf[(offset as usize) % BLOCKSIZE..len as usize]
+                    .chunks_mut(BLOCKSIZE) {
+                    let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
+                    self.disk.read(&mut chunk, inode.device, blockaddr)?;
+                }
+                Ok(len as usize)
+            }
+            _ => Err(()),
+        }
     }
 }
 
