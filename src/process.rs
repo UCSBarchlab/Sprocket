@@ -21,7 +21,6 @@ const FL_IF: u32 = 0x200;
 
 extern "C" {
     fn trapret(); // implement this later
-    fn forkret(); // todo: implement later.  must enable interrupts again
     static _binary_initcode_start: u8;
     static _binary_initcode_size: u8;
     fn swtch(old: *mut *mut Context, new: *mut Context);
@@ -72,7 +71,7 @@ pub struct Process {
     // ofile: *const [file::File; file::NOFILE], // Open files
     //cwd: file::Inode, // Current directory
     //name: [char; 16], // Process name (debugging)
-    channel: Option<usize>,
+    channel: Option<Channel>,
 }
 
 impl Process {
@@ -96,6 +95,18 @@ impl Process {
     }
 }
 
+pub static mut FIRST_PROCESS: bool = true;
+
+pub extern "C" fn forkret() {
+    unsafe {
+        if FIRST_PROCESS {
+            // do any kind of first-process init here.  may not need this
+            FIRST_PROCESS = false;
+        }
+        irq::enable();
+    }
+}
+
 #[derive(PartialEq)]
 pub enum ProcState {
     Unused,
@@ -104,6 +115,14 @@ pub enum ProcState {
     Runnable,
     Running,
     Zombie,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum Channel {
+    UseDisk, // someone else is making a disk request, wait until it's available
+    ReadDisk, // we initiated disk read operation earlier, wake us when the data is ready
+    FileSystem, // Waiting to do file system operation.
+    Other(usize),
 }
 
 #[repr(C)]
@@ -252,7 +271,7 @@ impl Scheduler {
     }
 
     // sched
-    fn reschedule(&mut self, cpu: &mut Cpu) {
+    pub fn reschedule(&mut self, cpu: &mut Cpu) {
         if let Some(ref mut p) = self.current {
 
             //  if(cpu->ncli != 1)
@@ -277,7 +296,7 @@ impl Scheduler {
     }
 
     /// Allows a thread to suspend itself in order to allow other execution to continue
-    pub fn sleep(&mut self, channel: usize) {
+    pub fn sleep(&mut self, channel: Channel) {
         {
             let p = self.current.as_mut().expect("Expected to call sleep from a thread!");
             p.channel = Some(channel);
@@ -298,7 +317,7 @@ impl Scheduler {
     }
 
     /// Marks all threads that are blocked on channel as runnable
-    pub fn wake(&mut self, channel: usize) {
+    pub fn wake(&mut self, channel: Channel) {
         for p in self.ptable
             .iter_mut()
             .filter(|p| p.state == ProcState::Sleeping && p.channel == Some(channel)) {
@@ -318,11 +337,11 @@ fn readeflags() -> u32 {
 #[macro_export]
 macro_rules! until {
     // in the case where we simply want to stop until the condition is met
-    ($cond: expr) => {
-        until!($cond, {})
+    ($cond: expr, $reason: expr) => {
+        until!($cond, $reason, {})
     };
     // else where we have arbitrary code to run after the condition is met
-    ($cond: expr, $code: expr) => {
+    ($cond: expr, $reason: expr, $code: expr) => {
         loop {
             {
                 // TODO: consider attempting to grab lock, and if locked then sleep
@@ -331,7 +350,7 @@ macro_rules! until {
                         break;
                     } // release lock and sleep?
             }
-            unsafe { SCHEDULER.as_mut().unwrap().reschedule(CPU.as_mut().unwrap()) };
+            unsafe { process::SCHEDULER.as_mut().unwrap().sleep($reason)};
         }
     }
 }

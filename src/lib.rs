@@ -11,13 +11,15 @@
 #![feature(drop_types_in_const)]
 
 #![allow(dead_code)]
-#![allow(empty_loop)]
+#![cfg_attr(feature = "cargo-clippy", allow(empty_loop))]
+
 
 extern crate rlibc;
 extern crate spin;
 extern crate alloc;
 extern crate collections;
 extern crate x86;
+extern crate slice_cast;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
@@ -37,7 +39,7 @@ mod picirq;
 mod uart;
 mod timer;
 //mod sleeplock;
-//mod ide;
+mod ide;
 mod buffercache;
 
 use vm::{PhysAddr, Address};
