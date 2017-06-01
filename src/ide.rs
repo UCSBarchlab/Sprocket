@@ -25,7 +25,7 @@ impl Disk {
     // truncate after 512?  can't really do anything else
     // shorter: read the last block, overwrite the first N bytes, writeback
 
-    pub fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<(), ()> {
+    pub fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()> {
         until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
         self.busy = true; // "lock" it
         // should probably create some kind of sleep lock instead, and populate it with this
@@ -34,13 +34,33 @@ impl Disk {
         unsafe {
             Self::ide_cmd(device, sector);
             io::outb(0x1f7, IDE_CMD_WRITE);
-            io::outsb(0x1f0, buffer); // write buffer
         }
 
-        Ok(())
+        // write an entire sector
+        if buffer.len() >= SECTOR_SIZE {
+            unsafe {
+                io::outsb(0x1f0, &buffer[0..SECTOR_SIZE]);
+            }
+        } else {
+            // or write the first N bytes of the sector and keep the latter half of the sector
+            // untouched
+            let mut tmp_buf = [0; SECTOR_SIZE];
+            self.read(&mut tmp_buf, device, sector)?;
+            for (tmp, src) in tmp_buf.iter_mut().zip(buffer.iter()) {
+                *tmp = *src;
+            }
+            unsafe {
+                io::outsb(0x1f0, &tmp_buf);
+            }
+        }
+
+        // notify caller how much we wrote (should just be the buffer size if <= SECTOR_SIZE)
+        let n = ::core::cmp::min(SECTOR_SIZE, buffer.len());
+
+        Ok(n)
     }
 
-    // we pass a buffer that's larger than 512:
+    // we pass a buffer that's larger than 512
     // just read the entire block into the 1st 512 bytes, can't do anything else
     // shorter: read the block and only read the first N bytes.  Doesn't really make sense to do
 
@@ -69,12 +89,12 @@ impl Disk {
 
         self.wait()?;
         // if the buffer is large enough for an entire block
-        if buffer.len() >= 512 {
+        if buffer.len() >= SECTOR_SIZE {
             // unsafe because of port I/O
             unsafe { io::insb(0x1f0, &mut buffer[0..SECTOR_SIZE]) };
         } else {
             // else read the entire block and truncate to the dest buffer length
-            let mut tmp_buf = [0; 512];
+            let mut tmp_buf = [0; SECTOR_SIZE];
             // unsafe because of port I/O
             unsafe { io::insb(0x1f0, &mut tmp_buf) };
             for (buf, tmp) in buffer.iter_mut().zip(tmp_buf.iter()) {

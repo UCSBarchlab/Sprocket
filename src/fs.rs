@@ -3,6 +3,10 @@ use slice_cast;
 use core::num::Wrapping;
 
 pub const NDIRECT: usize = 64;
+pub const NINDIRECT: usize = 0;
+// max file size, based on the number of blocks addressible (direct and indirect)
+pub const MAXFILE: usize = NDIRECT + INDIRECT_PER_BLOCK * NINDIRECT;
+
 pub const BLOCKSIZE: usize = 512;
 
 pub const ROOT_INUM: u32 = 0;
@@ -248,6 +252,62 @@ impl FileSystem {
             }
             _ => Err(()),
         }
+    }
+
+    fn write(&mut self, inode: &mut Inode, src_buf: &[u8], mut offset: u32) -> Result<usize, ()> {
+        match inode.type_ {
+            InodeType::File | InodeType::Directory => {
+                let len = src_buf.len() as u32;
+
+                // Don't allow writing large amount that would cause an overflow
+                if (Wrapping(offset) + Wrapping(len)).0 < offset || offset > inode.size {
+                    return Err(());
+                }
+
+                // if we're trying to write a file that's too large, abort
+                if len + offset > (MAXFILE * BLOCKSIZE) as u32 {
+                    return Err(());
+                }
+
+                // for the first block, take care to correctly overlap offset with the rest of the
+                // block
+                let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
+
+                if offset as usize % BLOCKSIZE != 0 {
+                    let mut tmp_buf = [0; BLOCKSIZE];
+                    self.disk.read(&mut tmp_buf, inode.device, blockaddr)?;
+
+                    for (tmp, src) in tmp_buf[(offset as usize) % BLOCKSIZE..BLOCKSIZE]
+                        .iter_mut()
+                        .zip(src_buf.iter()) {
+                        *tmp = *src;
+                    }
+
+                    offset += self.disk.write(&tmp_buf, inode.device, blockaddr)? as u32;
+                } else {
+                    // else business as usual, write the first block
+                    offset += self.disk.write(&src_buf[0..BLOCKSIZE], inode.device, blockaddr)? as
+                              u32;
+                }
+
+                // should figure out how to offset correctly
+                // now, copy a block at a time, truncating the last block as necessary
+                for chunk in src_buf[BLOCKSIZE - (offset as usize) % BLOCKSIZE..]
+                    .chunks(BLOCKSIZE) {
+                    let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
+                    offset += self.disk.write(chunk, inode.device, blockaddr)? as u32;
+                }
+
+                // update file size if we extended past the end of the file
+                if offset > inode.size {
+                    inode.size = offset;
+                }
+
+                Ok(len as usize)
+            }
+            _ => Err(()),
+        }
+
     }
 }
 
