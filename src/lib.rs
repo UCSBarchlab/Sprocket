@@ -9,6 +9,7 @@
 #![feature(collections)]
 #![allocator]
 #![feature(drop_types_in_const)]
+#![feature(step_by)]
 
 #![allow(dead_code)]
 #![cfg_attr(feature = "cargo-clippy", allow(empty_loop))]

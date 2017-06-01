@@ -9,7 +9,7 @@ pub const MAXFILE: usize = NDIRECT + INDIRECT_PER_BLOCK * NINDIRECT;
 
 pub const BLOCKSIZE: usize = 512;
 
-pub const ROOT_INUM: u32 = 0;
+pub const ROOT_INUM: u16 = 0;
 
 pub const BLOCKADDR_SIZE: usize = 4; // block address size in bytes.  32-bit
 
@@ -23,6 +23,7 @@ pub const DIRNAME_SIZE: usize = 254;
 
 pub const SUPERBLOCK_ADDR: u32 = 0;
 pub const UNUSED_BLOCKADDR: u32 = 0;
+pub const UNUSED_INUM: u16 = 0;
 
 macro_rules! INODE_SIZE {
     {} => {::core::mem::size_of::<Inode>()}
@@ -197,24 +198,59 @@ impl FileSystem {
         unimplemented!();
     }
 
-    fn dir_lookup(&mut self,
-                  _inode: &mut Inode,
-                  _name: &[u8],
-                  _target_inum: u32)
-                  -> Result<(), ()> {
-        assert!(_inode.type_ == InodeType::Directory);
-        unimplemented!();
+    fn dir_lookup(&mut self, mut dir: &mut Inode, name: &[u8]) -> Result<(u16, usize), ()> {
+        assert!(dir.type_ == InodeType::Directory);
+        let dirent_size = ::core::mem::size_of::<DirEntry>();
+        for offset in (0..dir.size).step_by(dirent_size as u32) {
+            let mut buf = [0; BLOCKSIZE];
+            self.read(&mut dir, &mut buf[..dirent_size], offset)?;
+            // read this as a directory entry
+            let entry: &DirEntry = unsafe { slice_cast::cast(&buf[..dirent_size])[0] };
+            if entry.inumber == UNUSED_INUM {
+                continue;
+            }
+
+            // Take the directory entry's name up to the first NUL (or all DIRNAME_SIZE bytes_)
+            // Also, take desired name up to the first NUL. Pad iterator it if it's shorter than
+            // dirname, so that equality will fail
+            // And check if it's equal to the kyy
+
+            // get entry name up to the first zero char, or all DIRNAME_SIZE bytes
+            let entry_len = entry.name.iter().position(|&x| x == 0).unwrap_or(DIRNAME_SIZE);
+
+            // must be that the query name is the same len as the entry's name
+            // and their contents must be equal
+            if entry_len == name.len() &&
+               entry.name[..entry_len].iter().zip(name).all(|(x, y)| *x == *y) {
+                return Ok((entry.inumber, offset as usize));
+            }
+        }
+
+        // not found
+        Err(())
     }
 
-    fn bmap(&mut self, inode: &mut Inode, blockno: u32) -> Result<u32, ()> {
+    /// Maps sequential block of file into a disk block address, or allocates one if the block
+    /// isn't mapped
+    fn bmap_or_alloc(&mut self, inode: &mut Inode, blockno: u32) -> Result<u32, ()> {
         let addr = inode.blocks[blockno as usize];
         if addr == UNUSED_BLOCKADDR {
             inode.blocks[blockno as usize] = self.alloc_block(inode.device)?;
         }
-        Ok(addr)
+        Ok(inode.blocks[blockno as usize])
     }
 
-    fn read(&mut self, inode: &mut Inode, dst_buf: &mut [u8], offset: u32) -> Result<usize, ()> {
+    /// Maps sequential block of file into a disk block address if mapped
+    fn bmap(&mut self, inode: &Inode, blockno: u32) -> Result<u32, ()> {
+        let addr = inode.blocks[blockno as usize];
+        if addr == UNUSED_BLOCKADDR {
+            Err(())
+        } else {
+            Ok(addr)
+        }
+    }
+
+    fn read(&mut self, inode: &Inode, dst_buf: &mut [u8], offset: u32) -> Result<usize, ()> {
         match inode.type_ {
             InodeType::File | InodeType::Directory => {
                 let mut len = dst_buf.len() as u32;
@@ -271,7 +307,7 @@ impl FileSystem {
 
                 // for the first block, take care to correctly overlap offset with the rest of the
                 // block
-                let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
+                let blockaddr = self.bmap_or_alloc(inode, offset / (BLOCKSIZE as u32))?;
 
                 if offset as usize % BLOCKSIZE != 0 {
                     let mut tmp_buf = [0; BLOCKSIZE];
@@ -294,7 +330,7 @@ impl FileSystem {
                 // now, copy a block at a time, truncating the last block as necessary
                 for chunk in src_buf[BLOCKSIZE - (offset as usize) % BLOCKSIZE..]
                     .chunks(BLOCKSIZE) {
-                    let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
+                    let blockaddr = self.bmap_or_alloc(inode, offset / (BLOCKSIZE as u32))?;
                     offset += self.disk.write(chunk, inode.device, blockaddr)? as u32;
                 }
 
@@ -363,7 +399,7 @@ pub const UNUSED_INODE: Inode = Inode {
 };
 
 #[repr(C)]
-pub struct Directory {
+pub struct DirEntry {
     inumber: u16,
     name: [u8; DIRNAME_SIZE],
 }
