@@ -9,7 +9,8 @@ pub const MAXFILE: usize = NDIRECT + INDIRECT_PER_BLOCK * NINDIRECT;
 
 pub const BLOCKSIZE: usize = 512;
 
-pub const ROOT_INUM: u16 = 0;
+pub const ROOT_INUM: u32 = 0;
+pub const ROOT_DEV: u32 = 1;
 
 pub const BLOCKADDR_SIZE: usize = 4; // block address size in bytes.  32-bit
 
@@ -23,7 +24,7 @@ pub const DIRNAME_SIZE: usize = 254;
 
 pub const SUPERBLOCK_ADDR: u32 = 0;
 pub const UNUSED_BLOCKADDR: u32 = 0;
-pub const UNUSED_INUM: u16 = 0;
+pub const UNUSED_INUM: u32 = 0;
 
 macro_rules! INODE_SIZE {
     {} => {::core::mem::size_of::<Inode>()}
@@ -194,7 +195,7 @@ impl FileSystem {
         unimplemented!();
     }
 
-    fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u16) -> Result<(), ()> {
+    fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u32) -> Result<(), ()> {
         // Don't add if it's already present
         if self.dir_lookup(dir, name).is_ok() {
             return Err(());
@@ -248,7 +249,7 @@ impl FileSystem {
         Ok(())
     }
 
-    fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u16, usize), ()> {
+    fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), ()> {
         assert!(dir.type_ == InodeType::Directory);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
         for offset in (0..dir.size).step_by(dirent_size as u32) {
@@ -393,7 +394,18 @@ impl FileSystem {
             }
             _ => Err(()),
         }
+    }
 
+    // return inum of the target file
+    fn namex(&mut self, path: &[u8], name: &[u8]) -> Result<u32, ()> {
+        let inode: Inode = if path == b"/" {
+            self.read_inode(ROOT_DEV, ROOT_INUM)?
+        } else {
+            return Err(()); // if/when we decide to support subdirectories, inode is current working directory
+        };
+
+        let (inum, _) = self.dir_lookup(&inode, name)?;
+        Ok(inum)
     }
 }
 
@@ -450,7 +462,7 @@ pub const UNUSED_INODE: Inode = Inode {
 
 #[repr(C)]
 pub struct DirEntry {
-    inumber: u16,
+    inumber: u32,
     name: [u8; DIRNAME_SIZE],
 }
 
