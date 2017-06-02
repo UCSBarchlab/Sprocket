@@ -194,16 +194,66 @@ impl FileSystem {
         unimplemented!();
     }
 
-    fn dir_add(&mut self, _inode: &mut Inode, _name: &[u8], _target_inum: u32) -> Result<(), ()> {
-        unimplemented!();
+    fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u16) -> Result<(), ()> {
+        // Don't add if it's already present
+        if self.dir_lookup(dir, name).is_ok() {
+            return Err(());
+        }
+
+        let dirent_size = ::core::mem::size_of::<DirEntry>();
+        let new_dirent = DirEntry {
+            inumber: target,
+            name: {
+                let mut n = [0; DIRNAME_SIZE];
+                n[..name.len()].copy_from_slice(name);
+                n
+            },
+        };
+
+        // search the dir for a free slot in the existing dir file
+        for offset in (0..dir.size).step_by(dirent_size as u32) {
+            let mut tmp_buf = [0; BLOCKSIZE];
+            assert_eq!(self.read(dir, &mut tmp_buf[..dirent_size], offset)?,
+                       dirent_size);
+
+            let found_empty = {
+                let dirent: &DirEntry = unsafe { &slice_cast::cast(&tmp_buf[..dirent_size])[0] };
+                dirent.inumber == UNUSED_INUM
+            };
+
+            if found_empty {
+                {
+                    let dirent: &mut DirEntry =
+                        unsafe { &mut slice_cast::cast_mut(&mut tmp_buf[..dirent_size])[0] };
+                    *dirent = new_dirent;
+                }
+                self.write(dir, &tmp_buf[..dirent_size], offset)?;
+                return Ok(());
+            }
+        }
+
+        // We didn't find a free slot, so append a new entry
+        // Copy the new directory entry into the buffer
+        let mut tmp_buf = [0; BLOCKSIZE];
+        {
+            let buf: &mut DirEntry =
+                unsafe { &mut slice_cast::cast_mut(&mut tmp_buf[..dirent_size])[0] };
+            *buf = new_dirent;
+        }
+
+        // write the new entry
+        let offset = dir.size;
+        self.write(dir, &tmp_buf[..dirent_size], offset)?;
+
+        Ok(())
     }
 
-    fn dir_lookup(&mut self, mut dir: &mut Inode, name: &[u8]) -> Result<(u16, usize), ()> {
+    fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u16, usize), ()> {
         assert!(dir.type_ == InodeType::Directory);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
         for offset in (0..dir.size).step_by(dirent_size as u32) {
             let mut buf = [0; BLOCKSIZE];
-            self.read(&mut dir, &mut buf[..dirent_size], offset)?;
+            self.read(dir, &mut buf[..dirent_size], offset)?;
             // read this as a directory entry
             let entry: &DirEntry = unsafe { slice_cast::cast(&buf[..dirent_size])[0] };
             if entry.inumber == UNUSED_INUM {
