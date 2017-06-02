@@ -11,6 +11,7 @@ use vm;
 use kalloc;
 use traps;
 use collections::linked_list::LinkedList;
+use fs;
 
 pub static mut CPU: Option<Cpu> = None;
 pub static mut SCHEDULER: Option<Scheduler> = None;
@@ -18,6 +19,7 @@ pub static mut SCHEDULER: Option<Scheduler> = None;
 //    static ref PTABLE: Mutex<LinkedList<Process>> = Mutex::new(LinkedList::<Process>::new());
 //}
 const FL_IF: u32 = 0x200;
+const PROCNAME_LEN: usize = 16;
 
 extern "C" {
     fn trapret(); // implement this later
@@ -69,13 +71,13 @@ pub struct Process {
     //chan: Option<*const u8>, // If non-zero, sleeping on chan. TODO figure out type
     killed: bool, // If non-zero, have been killed
     // ofile: *const [file::File; file::NOFILE], // Open files
-    //cwd: file::Inode, // Current directory
-    //name: [char; 16], // Process name (debugging)
+    cwd: u32, // Current directory inum
+    name: [u8; PROCNAME_LEN], // Process name (debugging)
     channel: Option<Channel>,
 }
 
 impl Process {
-    fn new(new_pid: u32, parent_pid: u32, pagedir: Box<vm::PageDir>) -> Process {
+    fn new(new_pid: u32, parent_pid: u32, pagedir: Box<vm::PageDir>, procname: &[u8]) -> Process {
         let mut stack: Box<InitKstack> = Box::new(Default::default());
         stack.trapret = trapret as u32;
         stack.context = Default::default();
@@ -91,6 +93,12 @@ impl Process {
             killed: false,
             state: ProcState::Embryo,
             channel: None,
+            cwd: fs::ROOT_INUM,
+            name: {
+                let mut n = [0; PROCNAME_LEN];
+                n.copy_from_slice(procname);
+                n
+            },
         }
     }
 }
@@ -181,7 +189,7 @@ pub struct TrapFrame {
 
 pub fn userinit() {
     let pgdir = vm::setupkvm().expect("userinit: out of memory");
-    let mut p = Process::new(1, 0, pgdir);
+    let mut p = Process::new(1, 0, pgdir, b"initcode");
     let slice = unsafe {
         // unsafe because of memory shenanigans
         core::slice::from_raw_parts(&_binary_initcode_start,
@@ -198,9 +206,7 @@ pub fn userinit() {
     p.trapframe.eip = 0;
     p.kstack.trapframe = p.trapframe;
 
-    // TODO: finish once file system is written
-
-
+    p.state = ProcState::Runnable;
 }
 
 
