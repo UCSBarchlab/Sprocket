@@ -2,7 +2,7 @@ use process;
 use x86::shared::io;
 use fs;
 
-pub struct Disk {
+pub struct Ide {
     busy: bool,
 }
 
@@ -16,9 +16,25 @@ pub const IDE_CMD_WRITE: u8 = 0x30;
 pub const IDE_CMD_RDMUL: usize = 0xc4;
 pub const IDE_CMD_WRMUL: usize = 0xc5;
 
-impl Disk {
-    fn init() -> Disk {
-        Disk { busy: false }
+impl fs::Disk for Ide {
+    fn init() -> Ide {
+        Ide { busy: false }
+    }
+    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()> {
+        self.write(buffer, device, sector)
+    }
+    fn read(&mut self, mut buffer: &mut [u8], device: u32, sector: u32) -> Result<(), ()> {
+        self.read(&mut buffer, device, sector)
+    }
+
+    fn sector_size() -> usize {
+        SECTOR_SIZE
+    }
+}
+
+impl Ide {
+    fn init() -> Ide {
+        Ide { busy: false }
     }
 
     // we pass a buffer that's larger than 512:

@@ -1,5 +1,8 @@
-use ide;
-use slice_cast;
+#![no_std]
+#![feature(step_by)]
+#![allow(dead_code)]
+
+extern crate slice_cast;
 use core::num::Wrapping;
 
 pub const NDIRECT: usize = 64;
@@ -40,11 +43,21 @@ macro_rules! IBLOCK {
 }
 
 
-pub struct FileSystem {
-    disk: ide::Disk,
+pub trait Disk {
+    fn init() -> Self;
+    fn read(&mut self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), ()>;
+    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()>;
+    fn sector_size() -> usize;
+}
+pub struct FileSystem<T>
+    where T: Disk
+{
+    disk: T,
 }
 
-impl FileSystem {
+impl<T> FileSystem<T>
+    where T: Disk
+{
     fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, ()> {
 
         assert!(inode.type_ != InodeType::Unused);
@@ -55,7 +68,7 @@ impl FileSystem {
         let sb = buffer_to_sb(&mut sb_buf);
 
         let inodes_per_block: u32 = (BLOCKSIZE / INODE_SIZE!()) as u32;
-        let mut block: [u8; ide::SECTOR_SIZE] = [0; ide::SECTOR_SIZE];
+        let mut block: [u8; BLOCKSIZE] = [0; BLOCKSIZE];
 
         for blockno in sb.inode_start..(NUM_INODES / inodes_per_block) + 1 {
             self.disk.read(&mut block, device, blockno as u32)?;

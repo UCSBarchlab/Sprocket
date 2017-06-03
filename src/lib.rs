@@ -9,7 +9,6 @@
 #![feature(collections)]
 #![allocator]
 #![feature(drop_types_in_const)]
-#![feature(step_by)]
 
 #![allow(dead_code)]
 #![cfg_attr(feature = "cargo-clippy", allow(empty_loop))]
@@ -21,6 +20,8 @@ extern crate alloc;
 extern crate collections;
 extern crate x86;
 extern crate slice_cast;
+extern crate simple_fs as fs;
+
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
@@ -29,13 +30,15 @@ extern crate lazy_static;
 mod console;
 #[macro_use]
 mod process;
+
+
+
 pub mod kalloc;
 mod flags;
 mod vm;
 mod traps;
 mod mmu;
 mod file;
-mod fs;
 mod picirq;
 mod uart;
 mod timer;
@@ -76,6 +79,9 @@ pub extern "C" fn main() {
         kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
                        kalloc::PHYSTOP.to_virt().addr() as *mut u8);
     }
+
+    //let mut f = fs::FileSystem { disk: ide::Disk { busy: false } };
+    //fs::mkfs();
 
     println!("Launching scheduler...");
     unsafe {
