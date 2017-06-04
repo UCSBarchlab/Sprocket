@@ -5,3 +5,11 @@ authors = ["David Coffill <decoffill@gmail.com>"]
 
 [dependencies]
 slice-cast = "0.1.2"
+
+[lib]
+name = "simple_fs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mkfs"
+path = "src/bin.rs"

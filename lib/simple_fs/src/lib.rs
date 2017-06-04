@@ -21,7 +21,7 @@ pub const INDIRECT_PER_BLOCK: usize = BLOCKSIZE / BLOCKADDR_SIZE;
 
 // Rust doesn't support compile-time sizeof, so we manually compute this :(
 pub const INODE_SIZE: usize = 62;
-pub const NUM_INODES: u32 = 10000;
+pub const NUM_INODES: u32 = 256;
 
 pub const DIRNAME_SIZE: usize = 254;
 
@@ -44,7 +44,6 @@ macro_rules! IBLOCK {
 
 
 pub trait Disk {
-    fn init() -> Self;
     fn read(&mut self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), ()>;
     fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()>;
     fn sector_size() -> usize;
@@ -52,12 +51,16 @@ pub trait Disk {
 pub struct FileSystem<T>
     where T: Disk
 {
-    disk: T,
+    pub disk: T,
 }
 
 impl<T> FileSystem<T>
     where T: Disk
 {
+    pub fn new(driver: T) -> FileSystem<T> {
+        FileSystem { disk: driver }
+    }
+
     fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, ()> {
 
         assert!(inode.type_ != InodeType::Unused);
@@ -94,7 +97,7 @@ impl<T> FileSystem<T>
         Err(())
     }
 
-    fn read_inode(&mut self, device: u32, inum: u32) -> Result<Inode, ()> {
+    pub fn read_inode(&mut self, device: u32, inum: u32) -> Result<Inode, ()> {
 
         assert!(inum <= NUM_INODES);
         // read superblock to get list start
@@ -113,7 +116,7 @@ impl<T> FileSystem<T>
         }
     }
 
-    fn update_inode(&mut self, inum: u32, inode: &Inode) -> Result<(), ()> {
+    pub fn update_inode(&mut self, inum: u32, inode: &Inode) -> Result<(), ()> {
         // read superblock to get list start
         let mut sb_buf = [0; 512];
         self.disk.read(&mut sb_buf, inode.device, SUPERBLOCK_ADDR)?;
@@ -141,15 +144,12 @@ impl<T> FileSystem<T>
         // read superblock to get freelist head
         self.disk.read(&mut block, device, SUPERBLOCK_ADDR)?;
 
-        // unsafe because of pointer and type shenanigans
-        let head_addr: u32 = unsafe { &mut *(block.as_mut_ptr() as *mut SuperBlock) }
-            .freelist_start;
+        let head_addr = buffer_to_sb(&mut block).freelist_start;
         if head_addr == UNUSED_BLOCKADDR {
             return Err(()); // no more blocks we can allocate!!!
         }
 
         self.disk.read(&mut block, device, head_addr)?; // read head of list
-        //let blocks: &mut [u32] = unsafe { &mut *(block.as_mut_ptr() as *mut u32) };
 
         let free_idx;
         {
@@ -204,8 +204,71 @@ impl<T> FileSystem<T>
         unimplemented!();
     }
 
-    fn free_block(&mut self, _device: u32, _blockno: u32) -> Result<(), ()> {
-        unimplemented!();
+    pub fn free_block(&mut self, device: u32, blockno: u32) -> Result<(), ()> {
+        let mut sb_buf = [0u8; 512];
+        let mut buffer = [0u8; 512];
+
+        // read superblock to get freelist head
+        self.disk.read(&mut sb_buf, device, SUPERBLOCK_ADDR)?;
+
+        let head_addr = buffer_to_sb(&mut sb_buf).freelist_start;
+        if head_addr == UNUSED_BLOCKADDR {
+            // update the superblock
+            buffer_to_sb(&mut sb_buf).freelist_start = blockno;
+            self.disk.write(&sb_buf, device, SUPERBLOCK_ADDR)?;
+
+            // and zero out our new head of the freelist
+            {
+                let freeblock: &mut [u32] = unsafe { slice_cast::cast_mut(&mut buffer) };
+                for i in freeblock.iter_mut() {
+                    *i = UNUSED_BLOCKADDR;
+                }
+            }
+
+            // write back the new link and exit
+            self.disk.write(&buffer, device, blockno)?;
+
+
+            return Ok(());
+        }
+
+        // get the head block of the freelist
+        self.disk.read(&mut buffer, device, head_addr)?;
+
+        let pos = {
+            let freeblock: &mut [u32] = unsafe { slice_cast::cast_mut(&mut buffer) };
+            freeblock.iter_mut().skip(1).position(|&mut x| x == UNUSED_BLOCKADDR)
+        };
+
+        if let Some(p) = pos {
+            // if there's a free space in this block, put ourselves in the free list and write back
+            {
+                let freeblock: &mut [u32] = unsafe { slice_cast::cast_mut(&mut buffer) };
+                freeblock[p] = blockno;
+            }
+            self.disk.write(&buffer, device, head_addr)?;
+        } else {
+            // else we *are* the new head of the free list
+
+            // update the superblock to point to us
+            buffer_to_sb(&mut sb_buf).freelist_start = blockno;
+            self.disk.write(&sb_buf, device, SUPERBLOCK_ADDR)?;
+
+            // zero out our block
+            {
+                let freeblock: &mut [u32] = unsafe { slice_cast::cast_mut(&mut buffer) };
+                for i in freeblock.iter_mut().skip(1) {
+                    *i = UNUSED_BLOCKADDR;
+                }
+                // set our block's next addr to point to the old head
+                freeblock[0] = head_addr;
+            }
+
+            // write back the new link and exit
+            self.disk.write(&buffer, device, blockno)?;
+        }
+
+        Ok(())
     }
 
     fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u32) -> Result<(), ()> {
@@ -430,11 +493,11 @@ fn buffer_to_sb(buffer: &mut [u8; 512]) -> &mut SuperBlock {
 
 #[repr(C)]
 pub struct SuperBlock {
-    size: u32,
-    nblocks: u32,
-    ninodes: u32,
-    inode_start: u32,
-    freelist_start: u32,
+    pub size: u32,
+    pub nblocks: u32,
+    pub ninodes: u32,
+    pub inode_start: u32,
+    pub freelist_start: u32,
 }
 
 #[repr(u16)]
