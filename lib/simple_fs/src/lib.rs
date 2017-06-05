@@ -27,7 +27,7 @@ pub const DIRNAME_SIZE: usize = 254;
 
 pub const SUPERBLOCK_ADDR: u32 = 0;
 pub const UNUSED_BLOCKADDR: u32 = 0;
-pub const UNUSED_INUM: u32 = 0;
+pub const UNUSED_INUM: u32 = ::core::u32::MAX;
 
 macro_rules! INODE_SIZE {
     {} => {::core::mem::size_of::<Inode>()}
@@ -61,7 +61,7 @@ impl<T> FileSystem<T>
         FileSystem { disk: driver }
     }
 
-    fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, ()> {
+    pub fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, ()> {
 
         assert!(inode.type_ != InodeType::Unused);
 
@@ -79,7 +79,9 @@ impl<T> FileSystem<T>
 
             let inum;
             {
-                let inodes: &mut [Inode] = unsafe { slice_cast::cast_mut(&mut block) };
+                let inodes: &mut [Inode] = unsafe {
+                    slice_cast::cast_mut(&mut block[..INODES_PER_BLOCK!() * INODE_SIZE!()])
+                };
                 inum = inodes.iter().position(|y| y.type_ == InodeType::Unused);
 
                 if let Some(i) = inum {
@@ -89,7 +91,7 @@ impl<T> FileSystem<T>
 
             if let Some(i) = inum {
                 self.disk.write(&block, device, blockno as u32)?;
-                return Ok(i as u32);
+                return Ok((blockno - 1) * (INODES_PER_BLOCK!() as u32) + i as u32);
             }
 
         }
@@ -110,7 +112,8 @@ impl<T> FileSystem<T>
         self.disk.read(&mut buf, device, IBLOCK!(inum, superblock) as u32)?;
 
         {
-            let inodes: &mut [Inode] = unsafe { slice_cast::cast_mut(&mut buf) };
+            let inodes: &mut [Inode] =
+                unsafe { slice_cast::cast_mut(&mut buf[..INODES_PER_BLOCK!() * INODE_SIZE!()]) };
             let offset = (inum as usize) % INODES_PER_BLOCK!();
             Ok(inodes[offset])
         }
@@ -127,7 +130,8 @@ impl<T> FileSystem<T>
         self.disk.read(&mut buf, inode.device, IBLOCK!(inum, superblock) as u32)?;
 
         {
-            let inodes: &mut [Inode] = unsafe { slice_cast::cast_mut(&mut buf) };
+            let inodes: &mut [Inode] =
+                unsafe { slice_cast::cast_mut(&mut buf[..INODES_PER_BLOCK!() * INODE_SIZE!()]) };
             let offset = (inum as usize) % INODES_PER_BLOCK!();
             inodes[offset] = *inode;
         }
@@ -271,7 +275,7 @@ impl<T> FileSystem<T>
         Ok(())
     }
 
-    fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u32) -> Result<(), ()> {
+    pub fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u32) -> Result<(), ()> {
         // Don't add if it's already present
         if self.dir_lookup(dir, name).is_ok() {
             return Err(());
@@ -325,14 +329,14 @@ impl<T> FileSystem<T>
         Ok(())
     }
 
-    fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), ()> {
+    pub fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), ()> {
         assert!(dir.type_ == InodeType::Directory);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
         for offset in (0..dir.size).step_by(dirent_size as u32) {
             let mut buf = [0; BLOCKSIZE];
             self.read(dir, &mut buf[..dirent_size], offset)?;
             // read this as a directory entry
-            let entry: &DirEntry = unsafe { slice_cast::cast(&buf[..dirent_size])[0] };
+            let entry: &DirEntry = unsafe { &slice_cast::cast(&buf[..dirent_size])[0] };
             if entry.inumber == UNUSED_INUM {
                 continue;
             }
@@ -377,7 +381,11 @@ impl<T> FileSystem<T>
         }
     }
 
-    fn read(&mut self, inode: &Inode, dst_buf: &mut [u8], offset: u32) -> Result<usize, ()> {
+    pub fn read(&mut self,
+                inode: &Inode,
+                dst_buf: &mut [u8],
+                mut offset: u32)
+                -> Result<usize, ()> {
         match inode.type_ {
             InodeType::File | InodeType::Directory => {
                 let mut len = dst_buf.len() as u32;
@@ -391,6 +399,9 @@ impl<T> FileSystem<T>
                 if offset + len > inode.size {
                     len = inode.size - offset;
                 }
+                let end = len + offset;
+
+                let short_buf = &mut dst_buf[..len as usize];
 
                 // for 0th block, copy from (offset % BLOCKSIZE, BLOCKSIZE)
                 // for intermediate blocks, we can copy BLOCKSIZE at a time
@@ -400,24 +411,35 @@ impl<T> FileSystem<T>
                 let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
                 let mut tmp_buf = [0; BLOCKSIZE];
                 self.disk.read(&mut tmp_buf, inode.device, blockaddr)?;
-                for (buf, tmp) in dst_buf.iter_mut()
+                for (buf, tmp) in short_buf.iter_mut()
                     .zip(tmp_buf[(offset as usize) % BLOCKSIZE..].iter()) {
                     *buf = *tmp;
                 }
+                offset += tmp_buf[(offset as usize) % BLOCKSIZE..].len() as u32;
+                if offset >= short_buf.len() as u32 {
+                    return Ok(short_buf.len());
+                }
+
+                // no more reading to do if the offset is greater than the len
 
                 // now, copy a block at a time, truncating the last block as necessary
-                for mut chunk in dst_buf[(offset as usize) % BLOCKSIZE..len as usize]
-                    .chunks_mut(BLOCKSIZE) {
+                // this is fucked for so many reasons, fix later
+                for mut chunk in short_buf[(offset as usize) % BLOCKSIZE..].chunks_mut(BLOCKSIZE) {
                     let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
                     self.disk.read(&mut chunk, inode.device, blockaddr)?;
+                    offset += chunk.len() as u32;
                 }
-                Ok(len as usize)
+                Ok(short_buf.len())
             }
             _ => Err(()),
         }
     }
 
-    fn write(&mut self, inode: &mut Inode, src_buf: &[u8], mut offset: u32) -> Result<usize, ()> {
+    pub fn write(&mut self,
+                 inode: &mut Inode,
+                 src_buf: &[u8],
+                 mut offset: u32)
+                 -> Result<usize, ()> {
         match inode.type_ {
             InodeType::File | InodeType::Directory => {
                 let len = src_buf.len() as u32;
@@ -446,17 +468,28 @@ impl<T> FileSystem<T>
                         *tmp = *src;
                     }
 
-                    offset += self.disk.write(&tmp_buf, inode.device, blockaddr)? as u32;
+                    offset +=
+                        self.disk.write(&tmp_buf, inode.device, blockaddr).expect("hahaha") as u32;
                 } else {
                     // else business as usual, write the first block
-                    offset += self.disk.write(&src_buf[0..BLOCKSIZE], inode.device, blockaddr)? as
-                              u32;
+                    // note: offset doesn't mean don't pad the end, just means we don't need to do
+                    // weird prepend logic
+                    offset += self.disk
+                        .write(&src_buf[..::core::cmp::min(BLOCKSIZE, src_buf.len())],
+                               inode.device,
+                               blockaddr)? as u32;
+                }
+
+                if offset >= src_buf.len() as u32 {
+                    if offset > inode.size {
+                        inode.size += src_buf.len() as u32;
+                    }
+                    return Ok(src_buf.len());
                 }
 
                 // should figure out how to offset correctly
                 // now, copy a block at a time, truncating the last block as necessary
-                for chunk in src_buf[BLOCKSIZE - (offset as usize) % BLOCKSIZE..]
-                    .chunks(BLOCKSIZE) {
+                for chunk in src_buf[(offset as usize)..].chunks(BLOCKSIZE) {
                     let blockaddr = self.bmap_or_alloc(inode, offset / (BLOCKSIZE as u32))?;
                     offset += self.disk.write(chunk, inode.device, blockaddr)? as u32;
                 }
@@ -492,6 +525,7 @@ fn buffer_to_sb(buffer: &mut [u8; 512]) -> &mut SuperBlock {
 }
 
 #[repr(C)]
+#[derive(PartialEq, Copy, Clone)]
 pub struct SuperBlock {
     pub size: u32,
     pub nblocks: u32,
@@ -502,7 +536,7 @@ pub struct SuperBlock {
 
 #[repr(u16)]
 #[derive(PartialEq, Clone, Copy)]
-enum InodeType {
+pub enum InodeType {
     Unused,
     File,
     Directory,
@@ -511,12 +545,12 @@ enum InodeType {
 #[repr(C)]
 #[derive(Copy)]
 pub struct Inode {
-    type_: InodeType,
-    device: u32,
-    major: u16,
-    minor: u16,
-    size: u32,
-    blocks: [u32; NDIRECT],
+    pub type_: InodeType,
+    pub device: u32,
+    pub major: u16,
+    pub minor: u16,
+    pub size: u32,
+    pub blocks: [u32; NDIRECT],
 }
 
 // Rust doesn't yet support integer type parameterization, so we manually implement the clone
