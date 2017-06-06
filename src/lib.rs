@@ -119,8 +119,10 @@ pub extern "C" fn main() {
 
 #[lang = "panic_fmt"]
 #[no_mangle]
-pub extern "C" fn panic_fmt() -> ! {
-    println!("Panic! An unrecoverable error occurred");
+pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+    println!("Panic! An unrecoverable error occurred at {}:{}",
+             file,
+             line);
     unsafe {
         irq::disable();
         x86::shared::halt();
