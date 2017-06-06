@@ -72,11 +72,12 @@ cofflos.img: bootblock kernel fs.img
 	dd if=bootblock of=cofflos.img conv=notrunc
 	dd if=kernel of=cofflos.img seek=1 conv=notrunc
 
-fs.img: mkfs TODO.md Cargo.toml
-	./mkfs fs.img TODO.md Cargo.toml
+fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README
+	dd if=/dev/zero of=fs.img bs=512 count=1000
+	cargo run --manifest-path lib/simple_fs/Cargo.toml -- fs.img README
 
-mkfs: src/mkfs.c src/fs.h
-	gcc -Werror -Wall -o mkfs src/mkfs.c
+mkfs: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs
+	cargo build --manifest-path lib/simple_fs/Cargo.toml
 
 entry.o: src/entry.S
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o entry.o src/entry.S

@@ -93,7 +93,7 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
             // print keyboard input for debugging
             use console;
             let ch = {
-                console::CONSOLE.lock().read_byte()
+                unsafe { console::CONSOLE2.as_mut().unwrap().read_byte() }
             };
             if let Some(c) = ch {
                 print!("{}", c as char);

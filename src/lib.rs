@@ -52,6 +52,9 @@ use x86::shared::irq;
 
 #[no_mangle]
 pub extern "C" fn main() {
+    unsafe {
+        console::CONSOLE2 = Some(console::Console::new());
+    }
     println!("COFFLOS OK!");
     println!("Initializing allocator");
     unsafe {
@@ -80,9 +83,33 @@ pub extern "C" fn main() {
                        kalloc::PHYSTOP.to_virt().addr() as *mut u8);
     }
 
-    //let mut f = fs::FileSystem { disk: ide::Disk { busy: false } };
-    //fs::mkfs();
+    println!("Reading root fs");
 
+    let mut fs = fs::FileSystem { disk: ide::Ide::init() };
+
+    let inum = fs.namex(b"/", b"README").unwrap();
+    let inode = fs.read_inode(fs::ROOT_DEV, inum);
+    match inode {
+        Ok(i) => {
+            println!("OK! Found 'README' at {}", inum);
+            println!("Size: {}", i.size);
+
+            let mut buf = [0; fs::BLOCKSIZE];
+            let mut off = 0;
+            while let Ok(n) = fs.read(&i, &mut buf, off) {
+                let s = ::core::str::from_utf8(&buf[..n]);
+                match s {
+                    Ok(s) => print!("{}", s),
+                    Err(e) => {
+                        println!("error, up to {}", e.valid_up_to());
+                        println!("at offset{}. Char is '{:x}'", off, buf[e.valid_up_to()]);
+                    }
+                }
+                off += fs::BLOCKSIZE as u32;
+            }
+        }
+        Err(_) => println!("Something broke :("),
+    }
     println!("Launching scheduler...");
     unsafe {
         process::SCHEDULER = Some(process::Scheduler::new());

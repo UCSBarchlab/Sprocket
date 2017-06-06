@@ -1,6 +1,7 @@
 use process;
 use x86::shared::io;
 use fs;
+use slice_cast;
 
 pub struct Ide {
     busy: bool,
@@ -17,13 +18,14 @@ pub const IDE_CMD_RDMUL: usize = 0xc4;
 pub const IDE_CMD_WRMUL: usize = 0xc5;
 
 impl fs::Disk for Ide {
-    fn init() -> Ide {
-        Ide { busy: false }
-    }
-    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()> {
+    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, fs::DiskError> {
         self.write(buffer, device, sector)
     }
-    fn read(&mut self, mut buffer: &mut [u8], device: u32, sector: u32) -> Result<(), ()> {
+    fn read(&mut self,
+            mut buffer: &mut [u8],
+            device: u32,
+            sector: u32)
+            -> Result<(), fs::DiskError> {
         self.read(&mut buffer, device, sector)
     }
 
@@ -33,7 +35,7 @@ impl fs::Disk for Ide {
 }
 
 impl Ide {
-    fn init() -> Ide {
+    pub fn init() -> Ide {
         Ide { busy: false }
     }
 
@@ -41,8 +43,12 @@ impl Ide {
     // truncate after 512?  can't really do anything else
     // shorter: read the last block, overwrite the first N bytes, writeback
 
-    pub fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()> {
-        until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
+    pub fn write(&mut self,
+                 buffer: &[u8],
+                 device: u32,
+                 sector: u32)
+                 -> Result<usize, fs::DiskError> {
+        //until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
         self.busy = true; // "lock" it
         // should probably create some kind of sleep lock instead, and populate it with this
         // possibly playing with fire due to aliasing rules, modifying mutable state that we "own"
@@ -55,7 +61,8 @@ impl Ide {
         // write an entire sector
         if buffer.len() >= SECTOR_SIZE {
             unsafe {
-                io::outsb(0x1f0, &buffer[0..SECTOR_SIZE]);
+                let as_u32: &[u32] = slice_cast::cast(&buffer[0..SECTOR_SIZE]);
+                io::outsl(0x1f0, as_u32);
             }
         } else {
             // or write the first N bytes of the sector and keep the latter half of the sector
@@ -65,10 +72,13 @@ impl Ide {
             for (tmp, src) in tmp_buf.iter_mut().zip(buffer.iter()) {
                 *tmp = *src;
             }
+            assert_eq!(tmp_buf.len(), SECTOR_SIZE);
+            let as_u32: &[u32] = unsafe { slice_cast::cast(&tmp_buf[0..SECTOR_SIZE]) };
             unsafe {
-                io::outsb(0x1f0, &tmp_buf);
+                io::outsl(0x1f0, as_u32);
             }
         }
+        self.wait()?;
 
         // notify caller how much we wrote (should just be the buffer size if <= SECTOR_SIZE)
         let n = ::core::cmp::min(SECTOR_SIZE, buffer.len());
@@ -82,12 +92,16 @@ impl Ide {
 
     // TODO: figure out a better way to indicate success/error?
     // i.e. Result<&mut [u8; SECTOR_SIZE], ()>
-    pub fn read(&mut self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), ()> {
-        until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
+    pub fn read(&mut self,
+                buffer: &mut [u8],
+                device: u32,
+                sector: u32)
+                -> Result<(), fs::DiskError> {
+        //until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
         self.busy = true; // "lock" it
         // should probably create some kind of sleep lock instead, and populate it with this
         // possibly playing with fire due to aliasing rules, modifying mutable state that we "own"
-        let _ = self.wait();
+        self.wait()?;
         // unsafe because port I/O
         unsafe {
             Self::ide_cmd(device, sector);
@@ -99,20 +113,26 @@ impl Ide {
         // advantage of ctx switch: cleaner code.  IDE controller may not like waiting though,
 
         // unsafe because of global state
-        unsafe {
-            process::SCHEDULER.as_mut().unwrap().sleep(process::Channel::ReadDisk);
-        }
+        //unsafe {
+        //process::SCHEDULER.as_mut().unwrap().sleep(process::Channel::ReadDisk);
+        //}
 
         self.wait()?;
         // if the buffer is large enough for an entire block
         if buffer.len() >= SECTOR_SIZE {
             // unsafe because of port I/O
-            unsafe { io::insb(0x1f0, &mut buffer[0..SECTOR_SIZE]) };
+            let mut as_u32: &mut [u32] =
+                unsafe { slice_cast::cast_mut(&mut buffer[0..SECTOR_SIZE]) };
+            unsafe { io::insl(0x1f0, &mut as_u32) };
         } else {
             // else read the entire block and truncate to the dest buffer length
             let mut tmp_buf = [0; SECTOR_SIZE];
             // unsafe because of port I/O
-            unsafe { io::insb(0x1f0, &mut tmp_buf) };
+            {
+                let mut as_u32: &mut [u32] =
+                    unsafe { slice_cast::cast_mut(&mut tmp_buf[0..SECTOR_SIZE]) };
+                unsafe { io::insl(0x1f0, &mut as_u32) };
+            }
             for (buf, tmp) in buffer.iter_mut().zip(tmp_buf.iter()) {
                 *buf = *tmp;
             }
@@ -123,7 +143,7 @@ impl Ide {
 
     // boilerplate for making an ide read/write request
     unsafe fn ide_cmd(device: u32, sector: u32) {
-        io::outb(0x3f6, 0); // generate interrupt
+        //io::outb(0x3f6, 0); // generate interrupt
         io::outb(0x1f2, (fs::BLOCKSIZE / SECTOR_SIZE) as u8);
         io::outb(0x1f3, sector as u8 & 0xff);
         io::outb(0x1f4, (sector >> 8) as u8 & 0xff);
@@ -133,7 +153,7 @@ impl Ide {
     }
 
     // poll the IDE device until it's ready
-    fn wait(&mut self) -> Result<(), ()> {
+    fn wait(&mut self) -> Result<(), fs::DiskError> {
         let mut r: u8;
         while {
             r = unsafe { io::inb(0x1f7) };
@@ -143,7 +163,7 @@ impl Ide {
         if r & (IDE_DF | IDE_ERR) == 0 {
             Ok(())
         } else {
-            Err(())
+            Err(fs::DiskError::IoError)
         }
     }
 }

@@ -9,9 +9,10 @@ const ASCII_BACKSPACE: u8 = 0x7f;
 // Ensure that console is only initialized once
 //static CONSOLE: spin::Once<Console> = spin::Once::new();
 
-lazy_static! {
-    pub static ref CONSOLE: spin::Mutex<Console> = spin::Mutex::new(Console::new());
-}
+pub static mut CONSOLE2: Option<Console> = None;
+//lazy_static! {
+//pub static ref CONSOLE: spin::Mutex<Console> = spin::Mutex::new(Console::new());
+//}
 
 
 const INPUT_BUF: usize = 128;
@@ -28,7 +29,7 @@ pub struct Console {
 }
 
 impl Console {
-    fn new() -> Console {
+    pub fn new() -> Console {
         Console { uart: uart::Uart::new().ok() }
     }
 
@@ -55,6 +56,7 @@ impl Console {
     }
 }
 
+
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> ::core::fmt::Result {
         for b in s.bytes() {
@@ -72,10 +74,14 @@ macro_rules! println {
     ($fmt:expr, $($arg:tt)*) => (print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+pub fn print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    unsafe { CONSOLE2.as_mut().unwrap().write_fmt(args).unwrap() };
+}
+
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => (
-        { use ::core::fmt::Write;
-          $crate::console::CONSOLE.lock().write_fmt(format_args!($($arg)*)).ok();
+    ($($arg:tt)*) => ({
+          $crate::console::print(format_args!($($arg)*));
     });
 }

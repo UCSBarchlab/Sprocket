@@ -1,5 +1,4 @@
 extern crate spin;
-use self::spin::Mutex;
 use rlibc::memset;
 use vm::{PhysAddr, VirtAddr, Address};
 
@@ -24,19 +23,13 @@ pub const DEVSPACE: VirtAddr = VirtAddr(0xFE000000); // Other devices are at hig
 
 pub struct Kmem {
     freelist: Option<*mut Run>,
-    use_lock: bool,
-    lock: Mutex<()>,
 }
 
 pub struct Run {
     next: Option<*mut Run>,
 }
 
-static mut KMEM: Kmem = Kmem {
-    freelist: None,
-    use_lock: false,
-    lock: Mutex::new(()),
-};
+static mut KMEM: Kmem = Kmem { freelist: None };
 
 
 // TODO: perhaps make a PhysAddr and a VirtAddr to ensure that
@@ -60,7 +53,6 @@ pub unsafe fn kinit1(vstart: *mut u8, vend: *mut u8) {
 
 pub unsafe fn kinit2(vstart: *mut u8, vend: *mut u8) {
     free_range(vstart, vend);
-    KMEM.use_lock = true;
 }
 
 unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
@@ -82,13 +74,6 @@ fn kfree(addr: *mut u8) {
 
         memset(addr, 1, PGSIZE);
 
-        // Acquire lock if needed
-        let _ = if KMEM.use_lock {
-            Some(KMEM.lock.lock())
-        } else {
-            None
-        };
-
         // Get address of thing we're actually freeing
         let freed = addr as *mut Run;
 
@@ -102,13 +87,6 @@ fn kfree(addr: *mut u8) {
 
 pub fn kalloc() -> Result<*mut u8, &'static str> {
     unsafe {
-        // Obtain the lock if needed
-        let _ = if KMEM.use_lock {
-            Some(KMEM.lock.lock())
-        } else {
-            None
-        };
-
         // Take the head element from the list out of the freelist
         let head = match KMEM.freelist.take() {
             Some(h) => h,

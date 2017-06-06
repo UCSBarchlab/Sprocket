@@ -373,7 +373,7 @@ impl<T> FileSystem<T>
     fn bmap(&mut self, inode: &Inode, blockno: u32) -> Result<u32, FsError> {
         let addr = inode.blocks[blockno as usize];
         if addr == UNUSED_BLOCKADDR {
-            Err(FsError::BlockNotMapped)
+            Err(FsError::BlockNotMapped(blockno))
         } else {
             Ok(addr)
         }
@@ -502,7 +502,7 @@ impl<T> FileSystem<T>
     }
 
     // return inum of the target file
-    fn namex(&mut self, path: &[u8], name: &[u8]) -> Result<u32, FsError> {
+    pub fn namex(&mut self, path: &[u8], name: &[u8]) -> Result<u32, FsError> {
         let inode: Inode = if path == b"/" {
             self.read_inode(ROOT_DEV, ROOT_INUM)?
         } else {
@@ -548,7 +548,7 @@ pub enum FsError {
     NotFound,
     ReadTooLarge,
     WriteTooLarge,
-    BlockNotMapped,
+    BlockNotMapped(u32),
     TypeMismatch, // don't invoke the file system on a device file!
     DiskFault(DiskError),
 }
@@ -597,10 +597,3 @@ pub struct DirEntry {
     inumber: u32,
     name: [u8; DIRNAME_SIZE],
 }
-
-pub fn mkfs() {}
-
-// marshalling/demarshalling
-// we will have user data that is just [u8; 512]
-// we will have blocks of inodes; [Inode; x | x * sizeof(Inode) <= 512 ]
-// we will possibly have blocks of other block numbers; [u32; 128]
