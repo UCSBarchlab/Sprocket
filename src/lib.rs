@@ -44,7 +44,6 @@ mod uart;
 mod timer;
 //mod sleeplock;
 mod ide;
-mod buffercache;
 
 use vm::{PhysAddr, Address};
 pub use traps::trap;
