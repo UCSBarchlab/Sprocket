@@ -18,8 +18,8 @@ fn main() {
     }
     // for each specified file, copy it into the new file system
     for arg in env::args().skip(2) {
+        println!("Writing {}", arg);
         write_file(&mut fs, &arg).unwrap();
-        println!("Wrote {}", arg);
     }
 }
 
@@ -53,7 +53,6 @@ fn write_file<T>(fs: &mut fs::FileSystem<T>, path: &String) -> Result<(), fs::Fs
     }
     println!("File writeback was successful!");
 
-    println!("{}", inum);
     let name = path.bytes().take(fs::DIRNAME_SIZE).collect::<Vec<_>>();
     let mut root = fs.read_inode(fs::ROOT_DEV, fs::ROOT_INUM).unwrap();
     fs.dir_add(&mut root, name.as_slice(), inum).unwrap();
