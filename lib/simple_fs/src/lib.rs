@@ -44,8 +44,8 @@ macro_rules! IBLOCK {
 
 
 pub trait Disk {
-    fn read(&mut self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), ()>;
-    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, ()>;
+    fn read(&mut self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), DiskError>;
+    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, DiskError>;
     fn sector_size() -> usize;
 }
 pub struct FileSystem<T>
@@ -61,7 +61,7 @@ impl<T> FileSystem<T>
         FileSystem { disk: driver }
     }
 
-    pub fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, ()> {
+    pub fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, FsError> {
 
         assert!(inode.type_ != InodeType::Unused);
 
@@ -91,15 +91,15 @@ impl<T> FileSystem<T>
 
             if let Some(i) = inum {
                 self.disk.write(&block, device, blockno as u32)?;
-                return Ok((blockno - 1) * (INODES_PER_BLOCK!() as u32) + i as u32);
+                return Ok((blockno - sb.inode_start) * (INODES_PER_BLOCK!() as u32) + i as u32);
             }
 
         }
 
-        Err(())
+        Err(FsError::ExhaustedInodes)
     }
 
-    pub fn read_inode(&mut self, device: u32, inum: u32) -> Result<Inode, ()> {
+    pub fn read_inode(&mut self, device: u32, inum: u32) -> Result<Inode, FsError> {
 
         assert!(inum <= NUM_INODES);
         // read superblock to get list start
@@ -119,7 +119,7 @@ impl<T> FileSystem<T>
         }
     }
 
-    pub fn update_inode(&mut self, inum: u32, inode: &Inode) -> Result<(), ()> {
+    pub fn update_inode(&mut self, inum: u32, inode: &Inode) -> Result<(), FsError> {
         // read superblock to get list start
         let mut sb_buf = [0; 512];
         self.disk.read(&mut sb_buf, inode.device, SUPERBLOCK_ADDR)?;
@@ -142,7 +142,7 @@ impl<T> FileSystem<T>
         Ok(())
     }
 
-    fn alloc_block(&mut self, device: u32) -> Result<u32, ()> {
+    fn alloc_block(&mut self, device: u32) -> Result<u32, FsError> {
         let mut block: [u8; 512] = [0; 512];
 
         // read superblock to get freelist head
@@ -150,19 +150,17 @@ impl<T> FileSystem<T>
 
         let head_addr = buffer_to_sb(&mut block).freelist_start;
         if head_addr == UNUSED_BLOCKADDR {
-            return Err(()); // no more blocks we can allocate!!!
+            return Err(FsError::ExhaustedBlocks); // no more blocks we can allocate!!!
         }
 
         self.disk.read(&mut block, device, head_addr)?; // read head of list
 
-        let free_idx;
-        {
+        let free_idx: Option<_> = {
             let freelist: &mut [u32] = unsafe { slice_cast::cast_mut(&mut block) };
-
-            // free_idx is small by one, since we ignore first item of the list (which holds the next
-            // part of the freelist)
-            free_idx = freelist.iter().skip(1).rposition(|x| *x != UNUSED_BLOCKADDR);
-        }
+            // free_idx is small by one, since we ignore first item of the list (points to next
+            // block)
+            freelist.iter().skip(1).rposition(|x| *x != UNUSED_BLOCKADDR)
+        };
 
         match free_idx {
             // The head of the freelist has a free block in it
@@ -179,7 +177,7 @@ impl<T> FileSystem<T>
                 self.disk.write(&block, device, head_addr)?;
                 self.disk.write(&[0; 512], device, new_blockno)?;
 
-                Ok(index as u32)
+                Ok(new_blockno)
             }
 
             // The head of the freelist *is* the new block we're allocating
@@ -204,11 +202,11 @@ impl<T> FileSystem<T>
         }
     }
 
-    fn free_inode(&mut self, _device: u32, _inumber: u32) -> Result<(), ()> {
+    fn free_inode(&mut self, _device: u32, _inumber: u32) -> Result<(), FsError> {
         unimplemented!();
     }
 
-    pub fn free_block(&mut self, device: u32, blockno: u32) -> Result<(), ()> {
+    pub fn free_block(&mut self, device: u32, blockno: u32) -> Result<(), FsError> {
         let mut sb_buf = [0u8; 512];
         let mut buffer = [0u8; 512];
 
@@ -248,7 +246,7 @@ impl<T> FileSystem<T>
             // if there's a free space in this block, put ourselves in the free list and write back
             {
                 let freeblock: &mut [u32] = unsafe { slice_cast::cast_mut(&mut buffer) };
-                freeblock[p] = blockno;
+                freeblock[p + 1] = blockno;
             }
             self.disk.write(&buffer, device, head_addr)?;
         } else {
@@ -275,10 +273,10 @@ impl<T> FileSystem<T>
         Ok(())
     }
 
-    pub fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u32) -> Result<(), ()> {
+    pub fn dir_add(&mut self, dir: &mut Inode, name: &[u8], target: u32) -> Result<(), FsError> {
         // Don't add if it's already present
         if self.dir_lookup(dir, name).is_ok() {
-            return Err(());
+            return Err(FsError::EntryExists);
         }
 
         let dirent_size = ::core::mem::size_of::<DirEntry>();
@@ -329,8 +327,8 @@ impl<T> FileSystem<T>
         Ok(())
     }
 
-    pub fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), ()> {
-        assert!(dir.type_ == InodeType::Directory);
+    pub fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), FsError> {
+        assert!(dir.type_ == InodeType::Directory, "{:?}", dir.type_);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
         for offset in (0..dir.size).step_by(dirent_size as u32) {
             let mut buf = [0; BLOCKSIZE];
@@ -358,12 +356,12 @@ impl<T> FileSystem<T>
         }
 
         // not found
-        Err(())
+        Err(FsError::NotFound)
     }
 
     /// Maps sequential block of file into a disk block address, or allocates one if the block
     /// isn't mapped
-    fn bmap_or_alloc(&mut self, inode: &mut Inode, blockno: u32) -> Result<u32, ()> {
+    fn bmap_or_alloc(&mut self, inode: &mut Inode, blockno: u32) -> Result<u32, FsError> {
         let addr = inode.blocks[blockno as usize];
         if addr == UNUSED_BLOCKADDR {
             inode.blocks[blockno as usize] = self.alloc_block(inode.device)?;
@@ -372,10 +370,10 @@ impl<T> FileSystem<T>
     }
 
     /// Maps sequential block of file into a disk block address if mapped
-    fn bmap(&mut self, inode: &Inode, blockno: u32) -> Result<u32, ()> {
+    fn bmap(&mut self, inode: &Inode, blockno: u32) -> Result<u32, FsError> {
         let addr = inode.blocks[blockno as usize];
         if addr == UNUSED_BLOCKADDR {
-            Err(())
+            Err(FsError::BlockNotMapped)
         } else {
             Ok(addr)
         }
@@ -385,21 +383,20 @@ impl<T> FileSystem<T>
                 inode: &Inode,
                 dst_buf: &mut [u8],
                 mut offset: u32)
-                -> Result<usize, ()> {
+                -> Result<usize, FsError> {
         match inode.type_ {
             InodeType::File | InodeType::Directory => {
                 let mut len = dst_buf.len() as u32;
                 // Don't allow reading past end of file, or reading large amount that would cause
                 // an overflow
                 if offset > inode.size || (Wrapping(offset) + Wrapping(len)).0 < offset {
-                    return Err(());
+                    return Err(FsError::ReadTooLarge);
                 }
 
                 // only read up to the end of the file
                 if offset + len > inode.size {
                     len = inode.size - offset;
                 }
-                let end = len + offset;
 
                 let short_buf = &mut dst_buf[..len as usize];
 
@@ -431,7 +428,7 @@ impl<T> FileSystem<T>
                 }
                 Ok(short_buf.len())
             }
-            _ => Err(()),
+            _ => Err(FsError::TypeMismatch),
         }
     }
 
@@ -439,19 +436,19 @@ impl<T> FileSystem<T>
                  inode: &mut Inode,
                  src_buf: &[u8],
                  mut offset: u32)
-                 -> Result<usize, ()> {
+                 -> Result<usize, FsError> {
         match inode.type_ {
             InodeType::File | InodeType::Directory => {
                 let len = src_buf.len() as u32;
 
                 // Don't allow writing large amount that would cause an overflow
                 if (Wrapping(offset) + Wrapping(len)).0 < offset || offset > inode.size {
-                    return Err(());
+                    return Err(FsError::WriteTooLarge);
                 }
 
                 // if we're trying to write a file that's too large, abort
                 if len + offset > (MAXFILE * BLOCKSIZE) as u32 {
-                    return Err(());
+                    return Err(FsError::WriteTooLarge);
                 }
 
                 // for the first block, take care to correctly overlap offset with the rest of the
@@ -468,8 +465,7 @@ impl<T> FileSystem<T>
                         *tmp = *src;
                     }
 
-                    offset +=
-                        self.disk.write(&tmp_buf, inode.device, blockaddr).expect("hahaha") as u32;
+                    offset += self.disk.write(&tmp_buf, inode.device, blockaddr)? as u32;
                 } else {
                     // else business as usual, write the first block
                     // note: offset doesn't mean don't pad the end, just means we don't need to do
@@ -501,16 +497,16 @@ impl<T> FileSystem<T>
 
                 Ok(len as usize)
             }
-            _ => Err(()),
+            _ => Err(FsError::TypeMismatch),
         }
     }
 
     // return inum of the target file
-    fn namex(&mut self, path: &[u8], name: &[u8]) -> Result<u32, ()> {
+    fn namex(&mut self, path: &[u8], name: &[u8]) -> Result<u32, FsError> {
         let inode: Inode = if path == b"/" {
             self.read_inode(ROOT_DEV, ROOT_INUM)?
         } else {
-            return Err(()); // if/when we decide to support subdirectories, inode is current working directory
+            return Err(FsError::NotFound); // if/when we decide to support subdirectories, inode is current working directory
         };
 
         let (inum, _) = self.dir_lookup(&inode, name)?;
@@ -535,11 +531,37 @@ pub struct SuperBlock {
 }
 
 #[repr(u16)]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum InodeType {
     Unused,
     File,
     Directory,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum FsError {
+    ExhaustedBlocks,
+    ExhaustedInodes,
+    NotDir,
+    EOF,
+    EntryExists,
+    NotFound,
+    ReadTooLarge,
+    WriteTooLarge,
+    BlockNotMapped,
+    TypeMismatch, // don't invoke the file system on a device file!
+    DiskFault(DiskError),
+}
+
+impl core::convert::From<DiskError> for FsError {
+    fn from(e: DiskError) -> Self {
+        FsError::DiskFault(e)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum DiskError {
+    IoError,
 }
 
 #[repr(C)]

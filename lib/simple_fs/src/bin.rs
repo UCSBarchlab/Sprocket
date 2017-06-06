@@ -18,12 +18,12 @@ fn main() {
     }
     // for each specified file, copy it into the new file system
     for arg in env::args().skip(2) {
-        write_file(&mut fs, &arg);
+        write_file(&mut fs, &arg).unwrap();
         println!("Wrote {}", arg);
     }
 }
 
-fn write_file<T>(fs: &mut fs::FileSystem<T>, path: &String) -> Result<(), ()>
+fn write_file<T>(fs: &mut fs::FileSystem<T>, path: &String) -> Result<(), fs::FsError>
     where T: fs::Disk
 {
     let mut f = File::open(path).expect("Could not open file");
@@ -35,33 +35,34 @@ fn write_file<T>(fs: &mut fs::FileSystem<T>, path: &String) -> Result<(), ()>
         size: 0,
         blocks: [0; fs::NDIRECT],
     };
-    let inum = fs.alloc_inode(fs::ROOT_DEV, inode)?;
+    let inum = fs.alloc_inode(fs::ROOT_DEV, inode).unwrap();
     assert!(inum != fs::ROOT_INUM);
     let mut buf = vec![];
-    f.read_to_end(&mut buf);
-    fs.write(&mut inode, &buf, 0)?;
-    fs.update_inode(inum, &inode);
+    f.read_to_end(&mut buf).unwrap();
+    fs.write(&mut inode, &buf, 0).unwrap();
+    fs.update_inode(inum, &inode).unwrap();
 
-    let new_inode = fs.read_inode(fs::ROOT_DEV, inum)?;
+    let new_inode = fs.read_inode(fs::ROOT_DEV, inum).unwrap();
     let mut buf2 = Vec::with_capacity(new_inode.size as usize);
-    fs.read(&new_inode, buf2.as_mut_slice(), 0);
+    fs.read(&new_inode, buf2.as_mut_slice(), 0).unwrap();
     assert_eq!(buf.len(), new_inode.size as usize);
     for (i, b) in buf.iter().enumerate() {
         let mut b2 = [0u8; 1];
-        fs.read(&new_inode, &mut b2[0..1], i as u32)?;
+        fs.read(&new_inode, &mut b2[0..1], i as u32).unwrap();
         assert_eq!(*b, b2[0]);
     }
     println!("File writeback was successful!");
 
-    let mut root = fs.read_inode(fs::ROOT_DEV, fs::ROOT_INUM)?;
     println!("{}", inum);
     let name = path.bytes().take(fs::DIRNAME_SIZE).collect::<Vec<_>>();
-    fs.dir_add(&mut root, name.as_slice(), inum);
+    let mut root = fs.read_inode(fs::ROOT_DEV, fs::ROOT_INUM).unwrap();
+    fs.dir_add(&mut root, name.as_slice(), inum).unwrap();
+    fs.update_inode(fs::ROOT_INUM, &root)?;
 
     Ok(())
 }
 
-fn mkfs<T>(fs: &mut fs::FileSystem<T>) -> Result<(), ()>
+fn mkfs<T>(fs: &mut fs::FileSystem<T>) -> Result<(), fs::FsError>
     where T: fs::Disk
 {
     // Write an unused inode for each of the inodes
@@ -78,7 +79,7 @@ fn mkfs<T>(fs: &mut fs::FileSystem<T>) -> Result<(), ()>
         nblocks: FS_SIZE,
         ninodes: fs::NUM_INODES,
         inode_start: 1,
-        freelist_start: 0,
+        freelist_start: fs::UNUSED_BLOCKADDR,
     };
     let mut buf = [0u8; fs::BLOCKSIZE];
     {
@@ -98,8 +99,10 @@ fn mkfs<T>(fs: &mut fs::FileSystem<T>) -> Result<(), ()>
 
     // add every data block to the freelist
     for blockno in datablocks_start..FS_SIZE {
-        fs.free_block(0, blockno)?;
+        fs.free_block(0, blockno).unwrap();
+        println!("freed {}", blockno);
     }
+
 
     // finally, create root dir
     let mut inode = fs::Inode {
@@ -153,7 +156,7 @@ impl DiskFile {
 }
 
 impl fs::Disk for DiskFile {
-    fn read(&mut self, mut buffer: &mut [u8], _: u32, sector: u32) -> Result<(), ()> {
+    fn read(&mut self, mut buffer: &mut [u8], _: u32, sector: u32) -> Result<(), fs::DiskError> {
         // seek to the sector
         assert!(buffer.len() <= 512);
         let _ = self.file.seek(SeekFrom::Start((sector as u64) * (Self::sector_size()) as u64));
@@ -161,15 +164,15 @@ impl fs::Disk for DiskFile {
         Ok(())
     }
 
-    fn write(&mut self, buffer: &[u8], _: u32, sector: u32) -> Result<usize, ()> {
+    fn write(&mut self, buffer: &[u8], _: u32, sector: u32) -> Result<usize, fs::DiskError> {
         assert!(buffer.len() <= 512, "length was {}", buffer.len());
         let _ = self.file.seek(SeekFrom::Start((sector as u64) * (Self::sector_size()) as u64));
         let written = self.file.write_all(buffer);
+        self.file.flush().unwrap();
         if written.is_ok() {
             Ok(buffer.len())
         } else {
-            loop {}
-            Err(())
+            Err(fs::DiskError::IoError)
         }
     }
 
