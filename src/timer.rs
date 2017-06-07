@@ -3,6 +3,7 @@ use traps;
 use picirq;
 
 const IO_TIMER1: u16 = 0x040; // 8253 Timer #1
+pub static mut TICKS: u32 = 0;
 
 // Frequency of all three count-down timers;
 // (TIMER_FREQ/freq) is the appropriate count

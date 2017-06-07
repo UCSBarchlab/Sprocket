@@ -72,7 +72,7 @@ fn kfree(addr: *mut u8) {
             panic!("kfree");
         }
 
-        memset(addr, 1, PGSIZE);
+        //memset(addr, 1, PGSIZE);
 
         // Get address of thing we're actually freeing
         let freed = addr as *mut Run;

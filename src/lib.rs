@@ -44,6 +44,7 @@ mod uart;
 mod timer;
 //mod sleeplock;
 mod ide;
+mod pci;
 
 use vm::{PhysAddr, Address};
 pub use traps::trap;
@@ -70,7 +71,7 @@ pub extern "C" fn main() {
     picirq::picinit();
     println!("Setting up interrupt descriptor table");
     traps::trap_vector_init();
-    //    timer::timerinit();
+    timer::timerinit();
     println!("Loading new interrupt descriptor table");
     traps::idtinit();
 
@@ -92,6 +93,7 @@ pub extern "C" fn main() {
         Ok(i) => {
             println!("OK! Found 'README' at {}", inum);
             println!("Size: {}", i.size);
+            println!("======================================================================");
 
             let mut buf = [0; fs::BLOCKSIZE];
             let mut off = 0;
@@ -106,9 +108,13 @@ pub extern "C" fn main() {
                 }
                 off += fs::BLOCKSIZE as u32;
             }
+            println!("======================================================================");
         }
         Err(_) => println!("Something broke :("),
     }
+    println!("Enumerating PCI");
+    pci::enumerate();
+
     println!("Launching scheduler...");
     unsafe {
         process::SCHEDULER = Some(process::Scheduler::new());
@@ -119,7 +125,7 @@ pub extern "C" fn main() {
 
 #[lang = "panic_fmt"]
 #[no_mangle]
-pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+pub extern "C" fn panic_fmt(_fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
     println!("Panic! An unrecoverable error occurred at {}:{}",
              file,
              line);

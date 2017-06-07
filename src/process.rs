@@ -1,5 +1,4 @@
 use mmu;
-use file;
 pub use x86::shared::segmentation::SegmentDescriptor;
 pub use x86::bits32::task::TaskStateSegment;
 pub use x86::shared::descriptor;
