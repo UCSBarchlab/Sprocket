@@ -45,6 +45,7 @@ mod timer;
 //mod sleeplock;
 mod ide;
 mod pci;
+mod rtl8139;
 
 use vm::{PhysAddr, Address};
 pub use traps::trap;
@@ -114,6 +115,7 @@ pub extern "C" fn main() {
     }
     println!("Enumerating PCI");
     pci::enumerate();
+    unsafe { rtl8139::Rtl8139::init() };
 
     println!("Launching scheduler...");
     unsafe {

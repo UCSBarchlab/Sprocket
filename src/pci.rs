@@ -11,8 +11,14 @@ pub const VEND_ID_OFFSET: u8 = 0;
 pub const DEV_ID_OFFSET: u8 = 2;
 pub const CMD_REG_OFFSET: u8 = 4;
 
+pub const BAR_TYPE_IO: u8 = 0x1;
+
+unsafe fn config_read16(bus: u8, slot: u8, func: u8, offset: u8) -> u16 {
+    (config_read32(bus, slot, func, offset) >> ((offset & 2) * 8) & 0xffff) as u16
+}
+
 // Adapted from http://wiki.osdev.org/PCI
-pub unsafe fn config_readword(bus: u8, slot: u8, func: u8, offset: u8) -> u16 {
+unsafe fn config_read32(bus: u8, slot: u8, func: u8, offset: u8) -> u32 {
     let lbus: u32 = bus as u32;
     let lslot: u32 = slot as u32;
     let lfunc: u32 = func as u32;
@@ -21,11 +27,22 @@ pub unsafe fn config_readword(bus: u8, slot: u8, func: u8, offset: u8) -> u16 {
                        (0x80000000);
 
     io::outl(CONFIG_ADDRESS, address);
-    let result: u16 = (io::inl(CONFIG_DATA) >> ((offset & 2) * 8) & 0xffff) as u16;
-    result
+    io::inl(CONFIG_DATA)
 }
 
-pub unsafe fn config_writeword(bus: u8, slot: u8, func: u8, offset: u8, config: u16) {
+unsafe fn config_write32(bus: u8, slot: u8, func: u8, offset: u8, config: u32) {
+    let lbus: u32 = bus as u32;
+    let lslot: u32 = slot as u32;
+    let lfunc: u32 = func as u32;
+
+    let address: u32 = (lbus << 16) | (lslot << 11) | (lfunc << 8) | ((offset as u32) & 0xfc) |
+                       (0x80000000);
+
+    io::outl(CONFIG_ADDRESS, address);
+    io::outl(CONFIG_DATA, config);
+}
+
+unsafe fn config_write16(bus: u8, slot: u8, func: u8, offset: u8, config: u16) {
     let lbus: u32 = bus as u32;
     let lslot: u32 = slot as u32;
     let lfunc: u32 = func as u32;
@@ -40,7 +57,7 @@ pub unsafe fn config_writeword(bus: u8, slot: u8, func: u8, offset: u8, config: 
         offset - 2
     };
 
-    let word = config_readword(bus, slot, func, other_off);
+    let word = config_read16(bus, slot, func, other_off);
 
     let data: u32 = if (offset & 0xfc) % 4 == 0 {
         (word as u32) << 16 | (config as u32)
@@ -48,17 +65,16 @@ pub unsafe fn config_writeword(bus: u8, slot: u8, func: u8, offset: u8, config: 
         (config as u32) << 16 | (word as u32)
     };
 
-    io::outl(CONFIG_ADDRESS, address);
-    io::outl(CONFIG_DATA, data);
+    config_write32(bus, slot, func, offset, data);
 }
 
 pub fn enumerate() {
     for bus in 0..256u16 {
         for slot in 0..32 {
-            let vendor = unsafe { config_readword(bus as u8, slot, 0, VEND_ID_OFFSET) };
+            let vendor = unsafe { config_read16(bus as u8, slot, 0, VEND_ID_OFFSET) };
             match vendor {
                 0x10ec => {
-                    let dev_id = unsafe { config_readword(bus as u8, slot, 0, DEV_ID_OFFSET) };
+                    let dev_id = unsafe { config_read16(bus as u8, slot, 0, DEV_ID_OFFSET) };
                     println!("    Found RTL-{:x} at {},{}", dev_id, bus, slot);
                 }
                 INVALID_VENDOR => {}
@@ -76,8 +92,8 @@ pub fn enumerate() {
 pub fn find(vendor: u16, device: u16) -> Option<PciDevice> {
     for bus in 0..256u16 {
         for slot in 0..32 {
-            let vend_id = unsafe { config_readword(bus as u8, slot, 0, VEND_ID_OFFSET) };
-            let dev_id = unsafe { config_readword(bus as u8, slot, 0, DEV_ID_OFFSET) };
+            let vend_id = unsafe { config_read16(bus as u8, slot, 0, VEND_ID_OFFSET) };
+            let dev_id = unsafe { config_read16(bus as u8, slot, 0, DEV_ID_OFFSET) };
             if vendor == vend_id && dev_id == device {
                 return Some(PciDevice::new(bus as u8, slot, 0));
             }
@@ -108,9 +124,9 @@ bitflags! {
 }
 
 pub struct PciDevice {
-    bus: u8,
-    slot: u8,
-    func: u8,
+    pub bus: u8,
+    pub slot: u8,
+    pub func: u8,
 }
 
 impl PciDevice {
@@ -125,13 +141,24 @@ impl PciDevice {
     // unsafe because we're manipulating external PCI state that rustc can't even begin to comprehend
     pub unsafe fn set_command_flags(&mut self, flag: Command) {
         let mut config =
-            Command::from_bits(config_readword(self.bus, self.slot, self.func, CMD_REG_OFFSET))
+            Command::from_bits(config_read16(self.bus, self.slot, self.func, CMD_REG_OFFSET))
                 .expect("Invalid PCI bits!");
 
         config.insert(flag);
 
-        config_writeword(self.bus, self.slot, self.func, CMD_REG_OFFSET, config.bits);
+        config_write16(self.bus, self.slot, self.func, CMD_REG_OFFSET, config.bits);
+    }
 
+    pub fn read16(&self, offset: u8) -> u16 {
+        unsafe { config_read16(self.bus, self.slot, self.func, offset) }
+    }
+
+    pub fn read32(&self, offset: u8) -> u32 {
+        unsafe { config_read32(self.bus, self.slot, self.func, offset) }
+    }
+
+    pub fn write32(&self, offset: u8, data: u32) {
+        unsafe { config_write32(self.bus, self.slot, self.func, offset, data) };
     }
 }
 
