@@ -47,6 +47,9 @@ qemu-dbg: fs.img cofflos.img
 qemu-console: fs.img cofflos.img
 	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
 
+qemu-net: fs.img cofflos.img
+	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio -device rtl8139
+
 rust_os := target/$(target)/debug/librv6.a
 
 # Build the bootloader block

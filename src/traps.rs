@@ -4,6 +4,7 @@ use x86::shared::dtables::{lidt, DescriptorTablePointer};
 use x86::shared::PrivilegeLevel;
 use vm::Segment;
 use process;
+use timer;
 
 // x86 trap and interrupt constants.
 
@@ -99,6 +100,9 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
                 print!("{}", c as char);
             }
         }
+        Interrupt::TimerInt => unsafe {
+            timer::TICKS += 1;
+        },
         _ => (),
     }
 

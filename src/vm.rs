@@ -9,7 +9,6 @@ use x86::shared::dtables;
 use x86::shared::descriptor;
 use x86::shared;
 use mmu;
-use process::Process;
 
 
 extern "C" {
@@ -227,10 +226,9 @@ fn seg2(base: usize,
         base3: ((base >> 24) & 0xff) as u8,
         access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT |
                 descriptor::FLAGS_TYPE_SEG | ty,
-        limit2_flags: seg::FLAGS_DB | seg::FLAGS_G | seg::Flags::from_limit2((limit >> 28) as u8), 
-                      // should be limit >> 32
+        // should be limit >> 32
+        limit2_flags: seg::FLAGS_DB | seg::FLAGS_G | seg::Flags::from_limit2((limit >> 28) as u8),
     }
-
 }
 
 fn seg(base: usize,
@@ -332,6 +330,13 @@ pub fn setupkvm() -> Result<Box<PageDir>, ()> {
                       k.p_start,
                       k.perm)?;
         }
+
+        // needed to do memory-mapped PCI configuration
+        //map_pages(&mut pgdir[..],
+        //          VirtAddr::new(0xe0000), // virtual base
+        //          0xfffff - 0xe0000, // size
+        //          PhysAddr::new(0xe0000), // phys base
+        //          PRESENT)?; // read only
     }
 
     Ok(pgdir)
@@ -397,12 +402,12 @@ pub fn inituvm(pgdir: &mut PageDir, init: &[u8]) {
 }
 
 /// Given page directory entries, Create PTEs for virtual addresses starting at va.
-fn map_pages(p: &mut [PageDirEntry],
-             va: VirtAddr,
-             size: usize,
-             mut pa: PhysAddr,
-             permissions: Entry)
-             -> Result<(), ()> {
+pub fn map_pages(p: &mut [PageDirEntry],
+                 va: VirtAddr,
+                 size: usize,
+                 mut pa: PhysAddr,
+                 permissions: Entry)
+                 -> Result<(), ()> {
     let mut a = va.page_rounddown();
     let last = va.offset::<u8>((size - 1) as isize).page_rounddown();
 
