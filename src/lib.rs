@@ -62,6 +62,7 @@ pub extern "C" fn main() {
         kalloc::kinit1(&mut kalloc::end,
                        PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
     }
+    unsafe { kalloc::validate() };
 
 
     println!("Initializing kernel paging");

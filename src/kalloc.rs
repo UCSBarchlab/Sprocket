@@ -30,7 +30,7 @@ pub struct Run {
     next: Option<*mut Run>,
 }
 
-static mut KMEM: Kmem = Kmem {
+pub static mut KMEM: Kmem = Kmem {
     freelist: None,
     tail: None,
 };
@@ -100,66 +100,46 @@ fn kfree(addr: *mut u8) {
     let v = VirtAddr(addr as usize);
     let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
     unsafe {
-        if !v.is_page_aligned() || v < kernel_start || v.to_phys() > PHYSTOP {
-            panic!("kfree");
-        }
-
-        //memset(addr, 1, PGSIZE);
-
-        // Get address of thing we're actually freeing
         let freed = addr as *mut Run;
 
-        // if the freelist is already populated
-        if let Some(mut ptr) = KMEM.freelist {
-            if ptr > freed {
-                println!("Prepending address {:#?} to {:#?}", freed, ptr);
-                // else we are the head
-                (*freed).next = KMEM.freelist.take();
-
-                // Now update freelist to point to our new head
-                KMEM.freelist = Some(freed);
-                return;
-            }
-
-            if let Some(mut t) = KMEM.tail {
-                if freed > t {
-                    KMEM.tail = Some(freed);
-                    (*t).next = Some(freed);
+        // Freelist contains at least one element
+        if let Some(ref mut h) = KMEM.freelist {
+            // should we append?
+            if let Some(ref mut t) = KMEM.tail {
+                if *t < freed {
+                    (**t).next = Some(freed);
+                    *t = freed;
                     (*freed).next = None;
-                    t = freed
+                    return;
                 }
-                return;
             }
 
-            let mut i = 0;
+            // should we prepend?
+            if freed < *h {
+                (*freed).next = Some(*h);
+                *h = freed;
+            }
 
-            loop {
-                if (*ptr).next.is_none() || freed < (*ptr).next.unwrap() {
-                    break;
+
+            // find our place
+            let mut current = *h;
+            while freed > current {
+                if let Some(next) = (*current).next {
+                    if freed < next {
+                        (*current).next = Some(freed);
+                        (*freed).next = Some(next);
+                        return;
+                    } else {
+                        current = next;
+                    }
                 } else {
-                    ptr = (*ptr).next.unwrap();
-                    i += 1;
+                    panic!();
                 }
             }
-
-            //        println!("Putting address {:#?} in middle at {}", ptr, i);
-
-            // Now update freelist to point to our new head
-            (*freed).next = (*ptr).next.take();
-            (*ptr).next = Some(freed);
-            if (*freed).next.is_none() {
-                KMEM.tail = Some(freed);
-            }
-            // else we are the head
-            //println!("New head: {:#?}", KMEM.freelist.unwrap());
         } else {
-            println!("Prepending address");
-            // else we are the head
-            (*freed).next = KMEM.freelist.take();
-
-            // Now update freelist to point to our new head
             KMEM.freelist = Some(freed);
-            KMEM.tail = Some(freed)
+            KMEM.tail = Some(freed);
+            (*freed).next = None;
         }
     }
 }
