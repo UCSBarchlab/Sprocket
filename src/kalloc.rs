@@ -23,13 +23,17 @@ pub const DEVSPACE: VirtAddr = VirtAddr(0xFE000000); // Other devices are at hig
 
 pub struct Kmem {
     freelist: Option<*mut Run>,
+    tail: Option<*mut Run>,
 }
 
 pub struct Run {
     next: Option<*mut Run>,
 }
 
-static mut KMEM: Kmem = Kmem { freelist: None };
+static mut KMEM: Kmem = Kmem {
+    freelist: None,
+    tail: None,
+};
 
 
 // TODO: perhaps make a PhysAddr and a VirtAddr to ensure that
@@ -55,12 +59,40 @@ pub unsafe fn kinit2(vstart: *mut u8, vend: *mut u8) {
     free_range(vstart, vend);
 }
 
-unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
+unsafe fn free_range_(vstart: *mut u8, vend: *mut u8) {
     let mut p = page_roundup_mut(vstart);
+    println!("start: {:#?}", p);
     while p.offset(PGSIZE as isize) <= vend {
         kfree(p);
         p = p.offset(PGSIZE as isize);
     }
+    println!("end: {:#?}", p.offset(-(PGSIZE as isize)));
+}
+
+unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
+    assert!(vstart < vend);
+    let mut p = page_roundup_mut(vend).offset(-(PGSIZE as isize));
+    println!("end: {:#?}", p);
+    while p >= vstart {
+        kfree(p);
+        p = p.offset(-(PGSIZE as isize));
+    }
+    println!("start: {:#?}", p.offset((PGSIZE as isize)));
+}
+
+pub unsafe fn validate() {
+    let mut p: Option<*mut Run> = KMEM.freelist;
+    while let Some(page) = p {
+        print!("{:#?}", page);
+        if let Some(next) = (*page).next {
+            println!("-> {:#?}", next);
+            assert!(page < next);
+            p = Some(next);
+        } else {
+            break;
+        }
+    }
+    return;
 }
 
 
@@ -77,11 +109,58 @@ fn kfree(addr: *mut u8) {
         // Get address of thing we're actually freeing
         let freed = addr as *mut Run;
 
-        // set freed element's next pointer to the head of the free list
-        (*freed).next = KMEM.freelist.take();
+        // if the freelist is already populated
+        if let Some(mut ptr) = KMEM.freelist {
+            if ptr > freed {
+                println!("Prepending address {:#?} to {:#?}", freed, ptr);
+                // else we are the head
+                (*freed).next = KMEM.freelist.take();
 
-        // Now update freelist to point to our new head
-        KMEM.freelist = Some(freed);
+                // Now update freelist to point to our new head
+                KMEM.freelist = Some(freed);
+                return;
+            }
+
+            if let Some(mut t) = KMEM.tail {
+                if freed > t {
+                    KMEM.tail = Some(freed);
+                    (*t).next = Some(freed);
+                    (*freed).next = None;
+                    t = freed
+                }
+                return;
+            }
+
+            let mut i = 0;
+
+            loop {
+                if (*ptr).next.is_none() || freed < (*ptr).next.unwrap() {
+                    break;
+                } else {
+                    ptr = (*ptr).next.unwrap();
+                    i += 1;
+                }
+            }
+
+            //        println!("Putting address {:#?} in middle at {}", ptr, i);
+
+            // Now update freelist to point to our new head
+            (*freed).next = (*ptr).next.take();
+            (*ptr).next = Some(freed);
+            if (*freed).next.is_none() {
+                KMEM.tail = Some(freed);
+            }
+            // else we are the head
+            //println!("New head: {:#?}", KMEM.freelist.unwrap());
+        } else {
+            println!("Prepending address");
+            // else we are the head
+            (*freed).next = KMEM.freelist.take();
+
+            // Now update freelist to point to our new head
+            KMEM.freelist = Some(freed);
+            KMEM.tail = Some(freed)
+        }
     }
 }
 
@@ -95,6 +174,9 @@ pub fn kalloc() -> Result<*mut u8, &'static str> {
 
         // Now update freelist with Option<> pointing to the next element
         KMEM.freelist = (*head).next.take();
+        if KMEM.freelist.is_none() {
+            KMEM.tail = None;
+        }
 
 
         // Return the struct as a ptr to the address
