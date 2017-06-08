@@ -83,12 +83,21 @@ pub extern "C" fn main() {
 
 
 
+
     println!("Finishing allocator initialization");
     unsafe {
         kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
                        kalloc::PHYSTOP.to_virt().addr() as *mut u8);
     }
+
     unsafe { kalloc::validate() };
+
+    let mut x = collections::vec::Vec::new();
+    for _ in 0..5000 {
+        x.push(0);
+    }
+    x.clear();
+    x.shrink_to_fit();
 
     println!("Reading root fs");
 
