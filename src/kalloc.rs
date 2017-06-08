@@ -121,7 +121,6 @@ fn kfree(addr: *mut u8) {
                     (**t).next = Some(freed);
                     *t = freed;
                     (*freed).next = None;
-                    //validate();
                     return;
                 }
             }
@@ -141,7 +140,6 @@ fn kfree(addr: *mut u8) {
                     if freed < next {
                         (*freed).next = Some(next);
                         (*current).next = Some(freed);
-                        //validate();
                         return;
                     } else {
                         current = next;
@@ -154,7 +152,6 @@ fn kfree(addr: *mut u8) {
             KMEM.freelist = Some(freed);
             KMEM.tail = Some(freed);
             (*freed).next = None;
-            //validate();
         }
     }
 }
@@ -162,7 +159,6 @@ fn kfree(addr: *mut u8) {
 pub fn kalloc(size: usize) -> Result<*mut u8, &'static str> {
     unsafe {
         let num_pages = (size + PGSIZE - 1) / PGSIZE;
-        validate();
 
 
 
@@ -197,7 +193,6 @@ pub fn kalloc(size: usize) -> Result<*mut u8, &'static str> {
                 (*prev_end).next = (*scan).next;
             }
             KMEM.len -= num_pages;
-            validate();
 
             return Ok(start as *mut u8);
         }
@@ -247,7 +242,8 @@ pub extern "C" fn __rust_reallocate(ptr: *mut u8,
     let old_mem = unsafe { ::core::slice::from_raw_parts_mut(ptr, num_old_pages * PGSIZE) };
 
     let new = unsafe { ::core::slice::from_raw_parts_mut(new_mem, num_new_pages * PGSIZE) };
-    new[..num_old_pages * PGSIZE].copy_from_slice(old_mem);
+    let overlap = ::core::cmp::min(num_old_pages, num_new_pages) * PGSIZE;
+    new[..overlap].copy_from_slice(&old_mem[..overlap]);
 
     for off in 0..num_old_pages {
         unsafe {
@@ -265,7 +261,7 @@ pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
                                             new_size: usize,
                                             align: usize)
                                             -> usize {
-    PGSIZE
+    size
 }
 
 

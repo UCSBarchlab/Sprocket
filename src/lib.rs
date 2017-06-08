@@ -69,16 +69,12 @@ pub extern "C" fn main() {
     vm::kvmalloc();
     println!("Initializing kernel segments");
     vm::seginit();
-    unsafe { kalloc::validate() };
     println!("Configuring PIC");
-    unsafe { kalloc::validate() };
     picirq::picinit();
     println!("Setting up interrupt descriptor table");
-    unsafe { kalloc::validate() };
     traps::trap_vector_init();
     timer::timerinit();
     println!("Loading new interrupt descriptor table");
-    unsafe { kalloc::validate() };
     traps::idtinit();
 
 
@@ -90,14 +86,8 @@ pub extern "C" fn main() {
                        kalloc::PHYSTOP.to_virt().addr() as *mut u8);
     }
 
-    unsafe { kalloc::validate() };
+    //unsafe { kalloc::validate() };
 
-    let mut x = collections::vec::Vec::new();
-    for _ in 0..5000 {
-        x.push(0);
-    }
-    x.clear();
-    x.shrink_to_fit();
 
     println!("Reading root fs");
 
