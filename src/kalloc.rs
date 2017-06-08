@@ -1,5 +1,3 @@
-extern crate spin;
-use rlibc::memset;
 use vm::{PhysAddr, VirtAddr, Address};
 
 extern "C" {
@@ -109,6 +107,10 @@ pub unsafe fn validate() {
 fn kfree(addr: *mut u8) {
     let v = VirtAddr(addr as usize);
     let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
+    if !v.is_page_aligned() || v < kernel_start || v.to_phys() > PHYSTOP {
+        panic!("kfree");
+    }
+
     unsafe {
         KMEM.len += 1;
         let freed = addr as *mut Run;
@@ -263,10 +265,3 @@ pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
                                             -> usize {
     size
 }
-
-
-
-// todo: figure out if there's a better way to have a lock other than conditionally locking like
-// xv6.  Maybe init it without a lock, then and then MOVE the linked list into the lock, where it
-// can then be forceably locked/unlocked
-// or maybe figure out why the lock can't be used in the firsst place?

@@ -1,4 +1,3 @@
-use spin;
 use uart;
 
 use core::fmt;

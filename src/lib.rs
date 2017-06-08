@@ -15,7 +15,6 @@
 
 
 extern crate rlibc;
-extern crate spin;
 extern crate alloc;
 extern crate collections;
 extern crate x86;

@@ -43,12 +43,6 @@ unsafe fn config_write32(bus: u8, slot: u8, func: u8, offset: u8, config: u32) {
 }
 
 unsafe fn config_write16(bus: u8, slot: u8, func: u8, offset: u8, config: u16) {
-    let lbus: u32 = bus as u32;
-    let lslot: u32 = slot as u32;
-    let lfunc: u32 = func as u32;
-
-    let address: u32 = (lbus << 16) | (lslot << 11) | (lfunc << 8) | ((offset as u32) & 0xfc) |
-                       (0x80000000);
 
     // if our 16-bit word is the low half of the register, fetch the higher half, or vice versa
     let other_off = if (offset & 0xfc) % 4 == 0 {
