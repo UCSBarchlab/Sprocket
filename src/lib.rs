@@ -17,6 +17,7 @@
 extern crate rlibc;
 extern crate alloc;
 extern crate collections;
+#[macro_use]
 extern crate x86;
 extern crate slice_cast;
 extern crate simple_fs as fs;
@@ -72,7 +73,7 @@ pub extern "C" fn main() {
     picirq::picinit();
     println!("Setting up interrupt descriptor table");
     traps::trap_vector_init();
-    timer::timerinit();
+    //timer::timerinit();
     println!("Loading new interrupt descriptor table");
     traps::idtinit();
 
@@ -119,7 +120,9 @@ pub extern "C" fn main() {
     }
     println!("Enumerating PCI");
     pci::enumerate();
-    unsafe { rtl8139::Rtl8139::init() };
+    unsafe {
+        rtl8139::NIC = rtl8139::Rtl8139::init();
+    }
 
     println!("Launching scheduler...");
     unsafe {

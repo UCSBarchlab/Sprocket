@@ -13,9 +13,6 @@ const IRQ_SLAVE: u8 = 2; // IRQ at which slave connects to master
 // Current IRQ mask.
 // Initial IRQ mask has interrupt 2 enabled (for slave 8259A).
 static mut IRQMASK: u16 = 0xFFFF & !(1 << IRQ_SLAVE);
-// TODO: this might be race-prone?  xv6 doesn't care, but it makes me nervous
-// Might only be a problem if we support multiprocessing?  Or might use some
-// kind of thread-local kernel storage
 
 unsafe fn picsetmask(mask: u16) {
     IRQMASK = mask;

@@ -35,7 +35,8 @@ qemu-gdb: fs.img cofflos.img .gdbinit
 ifndef CPUS
 CPUS := 2
 endif
-QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=cofflos.img,index=0,media=disk,format=raw -m 512 $(QEMUEXTRA) -d guest_errors #-d int -no-reboot
+QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=cofflos.img,index=0,media=disk,format=raw -m 512 $(QEMUEXTRA) -d guest_errors -device rtl8139,netdev=unet -netdev tap,id=unet,helper=/usr/lib/qemu/qemu-bridge-helper -object filter-dump,netdev=unet,id=netdev,file=dump.pcap
+#-d int -no-reboot
 
 qemu: fs.img cofflos.img
 	qemu-system-i386  $(QEMUOPTS) -monitor stdio
@@ -48,7 +49,9 @@ qemu-console: fs.img cofflos.img
 	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
 
 qemu-net: fs.img cofflos.img
-	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio -device rtl8139
+	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
+
+# -netdev bridge,id=br0 -object filter-dump,netdev=br0,id=br0,file='dump.pcap'
 
 rust_os := target/$(target)/debug/librv6.a
 

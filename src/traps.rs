@@ -5,6 +5,7 @@ use x86::shared::PrivilegeLevel;
 use vm::Segment;
 use process;
 use timer;
+use rtl8139;
 
 // x86 trap and interrupt constants.
 
@@ -12,11 +13,12 @@ use timer;
 pub const T_IRQ0: u8 = 32; // IRQ 0 corresponds to int T_IRQ
 pub const TIMER_IRQ: u8 = 0; // IRQ 0 corresponds to int T_IRQ
 pub const COM1_IRQ: u8 = 4; // IRQ 0 corresponds to int T_IRQ
+pub const NIC_IRQ: u8 = 0xb; // IRQ 0 corresponds to int T_IRQ
 
 pub const FLAG_INT_ENABLED: u32 = 0x200;
 
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Interrupt {
     DivError = 0, // divide error
     DebugException = 1, // debug exception
@@ -44,6 +46,7 @@ pub enum Interrupt {
     TimerInt = T_IRQ0 + TIMER_IRQ,
     KeyboardInt = T_IRQ0 + 1,
     Com1Int = T_IRQ0 + COM1_IRQ,
+    NetworkInt = T_IRQ0 + NIC_IRQ,
     IdeInt = T_IRQ0 + 14,
     ErrorInt = T_IRQ0 + 19,
     SpuriousInt = T_IRQ0 + 31,
@@ -52,6 +55,12 @@ pub enum Interrupt {
 impl Default for Interrupt {
     fn default() -> Interrupt {
         Interrupt::SpuriousInt
+    }
+}
+
+impl ::core::fmt::Display for Interrupt {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -97,13 +106,21 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
                 unsafe { console::CONSOLE2.as_mut().unwrap().read_byte() }
             };
             if let Some(c) = ch {
-                print!("{}", c as char);
+                //        print!("{}", c as char);
+            }
+
+            unsafe {
+                if let Some(ref n) = rtl8139::NIC {
+                    for b in n.buffer.iter().filter(|&&n| n != 0) {
+                        print!("{:x}", b);
+                    }
+
+                }
             }
         }
         Interrupt::TimerInt => unsafe {
             timer::TICKS += 1;
         },
-        _ => (),
+        t => println!("Recieved {} ({:#x})", t, t as u8),
     }
-
 }
