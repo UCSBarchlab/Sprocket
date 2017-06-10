@@ -118,6 +118,13 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
                 }
             }
         }
+        Interrupt::NetworkInt => unsafe {
+            println!("Network Int!");
+            if let Some(ref n) = rtl8139::NIC {
+                use x86::shared::io;
+                io::outw(n.iobase + 0x3E, 0x1);
+            }
+        },
         Interrupt::TimerInt => unsafe {
             timer::TICKS += 1;
         },

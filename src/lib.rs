@@ -20,6 +20,8 @@ extern crate collections;
 #[macro_use]
 extern crate x86;
 extern crate slice_cast;
+extern crate smoltcp;
+
 extern crate simple_fs as fs;
 
 #[macro_use]

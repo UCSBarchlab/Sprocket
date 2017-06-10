@@ -10,6 +10,7 @@ pub const RTL_8139: u16 = 0x8139;
 pub const VEND_ID_OFFSET: u8 = 0;
 pub const DEV_ID_OFFSET: u8 = 2;
 pub const CMD_REG_OFFSET: u8 = 4;
+pub const HDR_TYPE_OFFSET: u8 = 0xe;
 
 pub const BAR_TYPE_IO: u8 = 0x1;
 
@@ -147,13 +148,31 @@ impl PciDevice {
         unsafe { config_read16(self.bus, self.slot, self.func, offset) }
     }
 
-    pub fn read32(&self, offset: u8) -> u32 {
+    pub fn read32(&mut self, offset: u8) -> u32 {
         unsafe { config_read32(self.bus, self.slot, self.func, offset) }
     }
 
-    pub fn write32(&self, offset: u8, data: u32) {
+    pub fn write32(&mut self, offset: u8, data: u32) {
         unsafe { config_write32(self.bus, self.slot, self.func, offset, data) };
     }
+
+    pub fn header_type(&mut self) -> u16 {
+        self.read16(HDR_TYPE_OFFSET)
+    }
+
+    pub fn read_bar(&mut self, bar: Bar) -> u32 {
+        self.read32(bar as u8)
+    }
+}
+
+#[repr(u8)]
+pub enum Bar {
+    BAR0 = 0x10,
+    BAR1 = 0x14,
+    BAR2 = 0x18,
+    BAR3 = 0x1C,
+    BAR4 = 0x20,
+    BAR5 = 0x24,
 }
 
 

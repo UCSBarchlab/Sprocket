@@ -5,7 +5,9 @@ use x86::shared::io;
 pub const REALTEK: u16 = 0x10ec;
 pub const RTL_8139: u16 = 0x8139;
 use alloc::boxed::Box;
-use vm::{VirtAddr, PhysAddr, Address};
+use vm::{VirtAddr, Address};
+use smoltcp::Error;
+use smoltcp::phy::Device;
 
 const CONFIG_REG1: u16 = 0x52;
 const CMD_REG: u16 = 0x37;
@@ -16,7 +18,7 @@ const BUF_SIZE: usize = 8192 + 1500 + 16;
 
 pub struct Rtl8139 {
     pci: pci::PciDevice,
-    iobase: u16,
+    pub iobase: u16,
     pub buffer: Box<[u8; BUF_SIZE]>,
 }
 
@@ -25,6 +27,7 @@ pub static mut NIC: Option<Rtl8139> = None;
 impl Rtl8139 {
     pub unsafe fn init() -> Option<Rtl8139> {
         if let Some(mut dev) = pci::find(REALTEK, RTL_8139) {
+
             println!("{:016b}", dev.read16(pci::CMD_REG_OFFSET));
             // Enable bus mastering
             dev.set_command_flags(pci::BUS_MASTER);
@@ -32,22 +35,29 @@ impl Rtl8139 {
             let iobase = dev.read32(0x10);
 
             assert_eq!((iobase & 0x1) as u8, pci::BAR_TYPE_IO);
+            let iobase = (iobase & !(0x3)) as u16;
+            println!("iobase: {:#x}", iobase);
             let mut rtl = Rtl8139 {
                 pci: dev,
-                iobase: (iobase & !0x3) as u16,
+                iobase: iobase,
                 buffer: box [0; BUF_SIZE],
             };
-            rtl.enable();
-            rtl.reset();
-            io::outl(rtl.iobase + CMD_REG, 0x0c); // Enable TX/RX
-            rtl.program_rx_buf();
 
+            io::outb(rtl.iobase + 0x52, 0x0);
+            io::outb(rtl.iobase + 0x37, 0x10);
+            while {
+                (io::inb(rtl.iobase + 0x37) & 0x10) != 0
+            } {}
 
-            rtl.configure_interrupts();
+            let virt_addr = VirtAddr::new(&mut (rtl.buffer[0]) as *mut u8 as usize);
+            io::outl(rtl.iobase + 0x30, virt_addr.to_phys().addr() as u32);
 
+            io::outw(rtl.iobase + 0x3C, 0x0005);
 
-            // Enable wrapping, accept all packets (promiscuous mode)
-            io::outl(rtl.iobase + RX_CONFIG_REG, 0xf | (1 << 7));
+            io::outl(rtl.iobase + 0x44, 0xf | (1 << 7));
+
+            io::outb(rtl.iobase + 0x37, 0x0C);
+            picirq::picenable(0xb);
 
 
 
@@ -67,9 +77,8 @@ impl Rtl8139 {
             println!("Waiting for card");
             while {
                 io::inb(self.iobase + CMD_REG) & 0x10 != 0
-            } {
-                print!(".")
-            }
+            } {}
+            println!("Card successfully reset");
         }
     }
 
