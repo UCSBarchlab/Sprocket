@@ -148,7 +148,7 @@ impl PciDevice {
         unsafe { config_read16(self.bus, self.slot, self.func, offset) }
     }
 
-    pub fn read32(&mut self, offset: u8) -> u32 {
+    pub fn read32(&self, offset: u8) -> u32 {
         unsafe { config_read32(self.bus, self.slot, self.func, offset) }
     }
 
@@ -156,23 +156,29 @@ impl PciDevice {
         unsafe { config_write32(self.bus, self.slot, self.func, offset, data) };
     }
 
-    pub fn header_type(&mut self) -> u16 {
+    pub fn header_type(&self) -> u16 {
         self.read16(HDR_TYPE_OFFSET)
     }
 
-    pub fn read_bar(&mut self, bar: Bar) -> u32 {
+    pub fn read_bar(&self, bar: Bar) -> u32 {
         self.read32(bar as u8)
+    }
+
+    // return (line, pin)
+    pub fn read_irq(&self) -> (u8, u8) {
+        let word = self.read16(0x3c);
+        ((word & 0xff) as u8, (word >> 8) as u8)
     }
 }
 
 #[repr(u8)]
 pub enum Bar {
-    BAR0 = 0x10,
-    BAR1 = 0x14,
-    BAR2 = 0x18,
-    BAR3 = 0x1C,
-    BAR4 = 0x20,
-    BAR5 = 0x24,
+    Bar0 = 0x10,
+    Bar1 = 0x14,
+    Bar2 = 0x18,
+    Bar3 = 0x1C,
+    Bar4 = 0x20,
+    Bar5 = 0x24,
 }
 
 
