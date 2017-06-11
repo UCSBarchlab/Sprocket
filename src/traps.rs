@@ -2,7 +2,7 @@ use x86::bits32::irq::IdtEntry;
 use x86::shared::paging::VAddr;
 use x86::shared::dtables::{lidt, DescriptorTablePointer};
 use x86::shared::PrivilegeLevel;
-use vm::Segment;
+use vm::{Segment, Address};
 use process;
 use timer;
 use rtl8139;
@@ -106,23 +106,13 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
                 unsafe { console::CONSOLE2.as_mut().unwrap().read_byte() }
             };
             if let Some(c) = ch {
-                //        print!("{}", c as char);
-            }
-
-            unsafe {
-                if let Some(ref n) = rtl8139::NIC {
-                    for b in n.buffer.iter().filter(|&&n| n != 0) {
-                        print!("{:x}", b);
-                    }
-
-                }
+                print!("{}", c as char);
             }
         }
         Interrupt::NetworkInt => unsafe {
             println!("Network Int!");
-            if let Some(ref n) = rtl8139::NIC {
-                use x86::shared::io;
-                io::outw(n.iobase + 0x3E, 0x1);
+            if let Some(ref mut n) = rtl8139::NIC {
+                n.interrupt();
             }
         },
         Interrupt::TimerInt => unsafe {
