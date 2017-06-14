@@ -1,0 +1,7 @@
+[package]
+name = "kalloc"
+version = "0.1.0"
+authors = ["David Coffill <decoffill@gmail.com>"]
+
+[dependencies]
+mem_utils = { path="../mem_utils" }

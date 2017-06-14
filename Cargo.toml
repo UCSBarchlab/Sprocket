@@ -23,6 +23,7 @@ bitflags = "0.8"
 slice-cast = "0.1.2"
 smoltcp = { version = "0.3", default-features = false, features = [] }
 mem_utils = { path="lib/mem_utils" }
+kalloc = { path="lib/kalloc" }
 
 
 [dependencies.lazy_static]

@@ -24,6 +24,7 @@ extern crate smoltcp;
 
 extern crate simple_fs as fs;
 extern crate mem_utils as mem;
+extern crate kalloc;
 
 #[macro_use]
 extern crate bitflags;
@@ -36,7 +37,6 @@ mod process;
 
 
 
-pub mod kalloc;
 mod flags;
 mod vm;
 mod traps;

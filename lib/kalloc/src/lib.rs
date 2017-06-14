@@ -1,4 +1,10 @@
-use mem::{PhysAddr, VirtAddr, Address, PGSIZE, PHYSTOP};
+#![no_std]
+#![feature(allocator)]
+#![allocator]
+
+extern crate mem_utils;
+
+use mem_utils::{PhysAddr, VirtAddr, Address, PGSIZE, PHYSTOP};
 
 extern "C" {
     pub static mut end: u8;
@@ -78,9 +84,6 @@ pub unsafe fn validate() {
             p = Some(next);
         } else {
             assert_eq!(page, KMEM.tail.unwrap());
-            if count != KMEM.len {
-                println!("{} != {}", count, KMEM.len);
-            }
             assert_eq!(count, KMEM.len);
             return;
         }
