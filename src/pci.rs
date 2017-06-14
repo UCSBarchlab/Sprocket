@@ -184,9 +184,8 @@ pub enum Bar {
 
 /// Support for PCIe memory-mapped configuration
 pub mod pcie {
-    use vm::{KPGDIR, VirtAddr, PhysAddr, Address};
+    use mem::{PGSIZE, VirtAddr, PhysAddr, Address};
     use vm;
-    use kalloc;
     #[repr(C, packed)]
     #[derive(Debug)]
     pub struct RSDPDescriptor {
@@ -287,7 +286,7 @@ pub mod pcie {
             if let Some(p) = probe_rsdp() {
                 if let RSDP::V1(rsdp) = p {
                     println!("Discovered RSDP (ACPI 1.0) header at {:x}", rsdp as usize);
-                    let pgdir = ::core::slice::from_raw_parts_mut(KPGDIR.addr() as
+                    let pgdir = ::core::slice::from_raw_parts_mut(vm::KPGDIR.addr() as
                                                                   *mut vm::PageDirEntry,
                                                                   1024);
                     vm::map_pages(pgdir,
@@ -299,9 +298,9 @@ pub mod pcie {
                     let rsdt = ((*rsdp).rsdt_address) as *const RSDT;
                     println!("entries: {}", (*rsdt).header.length as usize);
                     vm::map_pages(pgdir,
-                                  VirtAddr::new((*rsdp).rsdt_address as usize + kalloc::PGSIZE),
+                                  VirtAddr::new((*rsdp).rsdt_address as usize + PGSIZE),
                                   (*rsdt).header.length as usize,
-                                  PhysAddr::new((*rsdp).rsdt_address as usize + kalloc::PGSIZE),
+                                  PhysAddr::new((*rsdp).rsdt_address as usize + PGSIZE),
                                   vm::PRESENT)
                         .unwrap();
                     println!("Searching for MCFG table");

@@ -1,0 +1,6 @@
+[package]
+name = "mem_utils"
+version = "0.1.0"
+authors = ["David Coffill <decoffill@gmail.com>"]
+
+[dependencies]

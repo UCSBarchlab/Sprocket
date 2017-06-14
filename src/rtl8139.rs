@@ -5,7 +5,7 @@ use x86::shared::io;
 pub const REALTEK: u16 = 0x10ec;
 pub const RTL_8139: u16 = 0x8139;
 use alloc::boxed::Box;
-use vm::{VirtAddr, PhysAddr, Address};
+use mem::{VirtAddr, PhysAddr, Address};
 use smoltcp::Error;
 use smoltcp::phy::Device;
 
@@ -126,17 +126,25 @@ impl Rtl8139 {
                 println!("CBA: {:#04x}", io::inw(self.iobase + CBA));
             }
 
-            /*
+            let mut c: [u8; 256] = [0; 256];
             {
-                use smoltcp::wire::Ipv4Packet;
                 let b = self.read().unwrap();
-                let c = b.clone();
-                let packet = Ipv4Packet::new(c);
+                let min = ::core::cmp::min(b.len(), 256);
+
+                println!("{:?}", &b);
+                println!("{:?}", &b as *const _);
+                c[..min].copy_from_slice(&b[..min]);
+
+                use smoltcp::wire::Ipv4Packet;
+                let d = c[..min].as_ref();
+                println!("{:?}", d);
+                /*
+                let packet = Ipv4Packet::new(&c[..min]);
                 if let Ok(p) = packet {
                     println!("{}", p.src_addr());
                 }
+                */
             }
-            */
 
             // Ensure that the new CAPR is dword aligned
             self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
@@ -161,7 +169,7 @@ impl Rtl8139 {
         if !self.rx_empty() {
             let len = self.get_rx_len() as usize;
             println!("len={}", len);
-            Some(&self.rx_buffer[self.rx_offset + 4..len])
+            Some(&self.rx_buffer[self.rx_offset + 4..self.rx_offset + 4 + len])
         } else {
             None
         }

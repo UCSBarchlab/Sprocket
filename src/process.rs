@@ -11,6 +11,7 @@ use kalloc;
 use traps;
 use collections::linked_list::LinkedList;
 use fs;
+use mem;
 
 pub static mut CPU: Option<Cpu> = None;
 pub static mut SCHEDULER: Option<Scheduler> = None;
@@ -82,7 +83,7 @@ impl Process {
         stack.context = Default::default();
         stack.context.eip = forkret as u32;
         Process {
-            size: kalloc::PGSIZE,
+            size: mem::PGSIZE,
             pgdir: pagedir,
             trapframe: stack.trapframe,
             context: stack.context,
@@ -195,13 +196,13 @@ pub fn userinit() {
                                     &_binary_initcode_size as *const _ as usize)
     };
     vm::inituvm(&mut p.pgdir, slice);
-    p.size = kalloc::PGSIZE;
+    p.size = mem::PGSIZE;
     p.trapframe.cs = (vm::Segment::UCode as u16) << 3 | PrivilegeLevel::Ring3 as u16;
     p.trapframe.ds = (vm::Segment::UData as u16) << 3 | PrivilegeLevel::Ring3 as u16;
     p.trapframe.es = p.trapframe.ds;
     p.trapframe.ss = p.trapframe.ds;
     p.trapframe.eflags = traps::FLAG_INT_ENABLED;
-    p.trapframe.esp = kalloc::PGSIZE as u32;
+    p.trapframe.esp = mem::PGSIZE as u32;
     p.trapframe.eip = 0;
     p.kstack.trapframe = p.trapframe;
 
@@ -238,6 +239,27 @@ impl Scheduler {
     pub fn scheduler(&mut self) -> ! {
         loop {
             unsafe { irq::disable() };
+
+            use smoltcp::phy::Device;
+            use smoltcp::wire::{PrettyPrinter, EthernetFrame};
+            use rtl8139;
+
+            unsafe {
+                // if let Ok(b) = rtl8139::NIC.as_mut().unwrap().receive() {
+                //     let frame = EthernetFrame::new(b);
+                //     println!("src: {}", frame.unwrap().src_addr());
+                //     //let pr = PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &y);
+                //     //print!("{}", pr);
+                //     //print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &(b.0)));
+                // }
+                // if let Some(r) = rtl8139::NIC.as_mut() {
+                //     if !r.rx_empty() {
+                //         println!("Non-empty!");
+                //     }
+                // }
+            }
+
+
 
             // scan queue to find runnable process (if any exist)
             let run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);

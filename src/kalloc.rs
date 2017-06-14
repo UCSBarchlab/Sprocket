@@ -1,23 +1,8 @@
-use vm::{PhysAddr, VirtAddr, Address};
+use mem::{PhysAddr, VirtAddr, Address, PGSIZE, PHYSTOP};
 
 extern "C" {
     pub static mut end: u8;
 }
-
-pub const PGSIZE: usize = 4096;
-
-
-// Memory layout
-
-pub const KERNBASE: VirtAddr = VirtAddr(0x80000000);
-pub const KERNLINK: VirtAddr = VirtAddr(KERNBASE.0 + EXTMEM.0); // Address where kernel is linked
-
-
-pub const EXTMEM: PhysAddr = PhysAddr(0x100000); // Start of extended memory
-pub const PHYSTOP: PhysAddr = PhysAddr(0xE000000); // Top physical memory
-pub const DEVSPACE: VirtAddr = VirtAddr(0xFE000000); // Other devices are at high addresses
-
-// Key addresses for address space layout (see kmap in vm.c for layout)
 
 pub struct Kmem {
     freelist: Option<*mut Run>,

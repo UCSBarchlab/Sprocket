@@ -23,6 +23,7 @@ extern crate slice_cast;
 extern crate smoltcp;
 
 extern crate simple_fs as fs;
+extern crate mem_utils as mem;
 
 #[macro_use]
 extern crate bitflags;
@@ -49,7 +50,7 @@ mod ide;
 mod pci;
 mod rtl8139;
 
-use vm::{PhysAddr, Address};
+use mem::{PhysAddr, Address};
 pub use traps::trap;
 use x86::shared::irq;
 
@@ -85,7 +86,7 @@ pub extern "C" fn main() {
     println!("Finishing allocator initialization");
     unsafe {
         kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
-                       kalloc::PHYSTOP.to_virt().addr() as *mut u8);
+                       mem::PHYSTOP.to_virt().addr() as *mut u8);
     }
 
     //unsafe { kalloc::validate() };
@@ -136,10 +137,11 @@ pub extern "C" fn main() {
 
 #[lang = "panic_fmt"]
 #[no_mangle]
-pub extern "C" fn panic_fmt(_fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
     println!("Panic! An unrecoverable error occurred at {}:{}",
              file,
              line);
+    println!("{}", fmt);
     unsafe {
         irq::disable();
         x86::shared::halt();

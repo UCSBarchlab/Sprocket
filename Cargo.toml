@@ -21,7 +21,8 @@ rlibc = "1.0"
 #linked_list_allocator = "0.2.5"
 bitflags = "0.8"
 slice-cast = "0.1.2"
-smoltcp = { version = "0.3", default-features = false, features = ["alloc", "collections"]  }
+smoltcp = { version = "0.3", default-features = false, features = [] }
+mem_utils = { path="lib/mem_utils" }
 
 
 [dependencies.lazy_static]

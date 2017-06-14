@@ -1,7 +1,6 @@
 use kalloc;
 use alloc::boxed::Box;
 use core;
-use core::ops::Sub;
 use process;
 use x86::shared::segmentation::SegmentDescriptor;
 use x86::shared::segmentation as seg;
@@ -9,13 +8,12 @@ use x86::shared::dtables;
 use x86::shared::descriptor;
 use x86::shared;
 use mmu;
-
+use mem::{PhysAddr, VirtAddr, Address, PGSIZE, KERNBASE, KERNLINK, PHYSTOP, DEVSPACE, EXTMEM};
 
 extern "C" {
     /// The virtual address at the beginning of the data segment
     static data: u8;
 }
-
 
 /// Struct to help define kernel mappings in each process's page table
 struct Kmap {
@@ -33,26 +31,26 @@ lazy_static! {
         let DATA_BEGIN: VirtAddr = VirtAddr(unsafe { &data } as *const _ as usize);
         [
             Kmap {
-                virt: kalloc::KERNBASE,
+                virt: KERNBASE,
                 p_start: PhysAddr(0),
-                p_end: kalloc::EXTMEM,
+                p_end: EXTMEM,
                 perm: WRITABLE,
             },
             Kmap {
-                virt: kalloc::KERNLINK,
-                p_start: kalloc::KERNLINK.to_phys(),
+                virt: KERNLINK,
+                p_start: KERNLINK.to_phys(),
                 p_end: DATA_BEGIN.to_phys(),
                 perm: Entry::empty(),
             },
             Kmap {
                 virt: DATA_BEGIN,
                 p_start: DATA_BEGIN.to_phys(),
-                p_end: kalloc::PHYSTOP,
+                p_end: PHYSTOP,
                 perm: WRITABLE,
             },
             Kmap {
-                virt: kalloc::DEVSPACE,
-                p_start: PhysAddr(kalloc::DEVSPACE.addr()),
+                virt: DEVSPACE,
+                p_start: PhysAddr(DEVSPACE.addr()),
                 p_end: PhysAddr(0),
                 perm: WRITABLE,
             },
@@ -89,15 +87,7 @@ impl Entry {
 }
 
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default)]
-/// A convenience class to safely work with and manipulate physical addresses
-pub struct PhysAddr(pub usize);
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default)]
-/// A convenience class to safely work with and manipulate virtual (paged) addresses
-pub struct VirtAddr(pub usize);
 
-pub const PDXSHIFT: usize = 22;
-pub const PTXSHIFT: usize = 12;
 
 /// GDT segment descriptor indices
 pub enum Segment {
@@ -110,105 +100,7 @@ pub enum Segment {
 }
 
 
-impl PhysAddr {
-    pub fn new(addr: usize) -> PhysAddr {
-        PhysAddr(addr)
-    }
 
-    pub fn to_virt(&self) -> VirtAddr {
-        VirtAddr::new(self.0 + kalloc::KERNBASE.addr())
-    }
-}
-
-impl Sub for PhysAddr {
-    type Output = usize;
-
-    fn sub(self, other: PhysAddr) -> usize {
-        self.0.wrapping_sub(other.0)
-    }
-}
-
-impl Sub for VirtAddr {
-    type Output = usize;
-    fn sub(self, other: VirtAddr) -> usize {
-        self.0.wrapping_sub(other.0)
-    }
-}
-
-impl VirtAddr {
-    pub fn new(addr: usize) -> VirtAddr {
-        VirtAddr(addr)
-    }
-
-    pub fn to_phys(&self) -> PhysAddr {
-        PhysAddr::new(self.0 - kalloc::KERNBASE.addr())
-    }
-
-    fn page_dir_index(&self) -> usize {
-        (self.addr() >> PDXSHIFT) & 0x3FF
-    }
-
-    fn page_table_index(&self) -> usize {
-        (self.addr() >> PTXSHIFT) & 0x3FF
-    }
-}
-
-/// A utility trait that implements common methods for `PhysAddr` and `VirtAddr`
-pub trait Address {
-    fn new(usize) -> Self where Self: core::marker::Sized;
-
-    fn addr(&self) -> usize;
-
-    fn is_page_aligned(&self) -> bool {
-        self.addr() % kalloc::PGSIZE == 0
-    }
-
-    fn page_roundup(&self) -> Self
-        where Self: core::marker::Sized
-    {
-        let addr = (self.addr() + kalloc::PGSIZE - 1) & !(kalloc::PGSIZE - 1);
-        Self::new(addr)
-    }
-
-    fn page_rounddown(&self) -> Self
-        where Self: core::marker::Sized
-    {
-        let addr = self.addr() & !(kalloc::PGSIZE - 1);
-        Self::new(addr)
-    }
-
-    // Simulate pointer arithmetic of adding/subtracting 4-byte int to address
-    fn offset<T>(&self, off: isize) -> Self
-        where Self: core::marker::Sized
-    {
-        let size = core::mem::size_of::<T>();
-        if off > 0 {
-            Self::new(self.addr() + (size * off as usize))
-        } else {
-            Self::new(self.addr() - (size * off as usize))
-        }
-    }
-}
-
-impl Address for VirtAddr {
-    fn new(addr: usize) -> VirtAddr {
-        VirtAddr(addr)
-    }
-
-    fn addr(&self) -> usize {
-        self.0
-    }
-}
-
-impl Address for PhysAddr {
-    fn new(addr: usize) -> PhysAddr {
-        PhysAddr(addr)
-    }
-
-    fn addr(&self) -> usize {
-        self.0
-    }
-}
 
 
 pub static mut KPGDIR: VirtAddr = VirtAddr(0);
@@ -320,7 +212,7 @@ pub fn setupkvm() -> Result<Box<PageDir>, ()> {
     let mut pgdir = box [PageDirEntry(Entry::empty()); 1024]; // allocate new page table
 
     // We know this is okay, just for convenience
-    assert!(kalloc::PHYSTOP.to_virt() <= kalloc::DEVSPACE);
+    assert!(PHYSTOP.to_virt() <= DEVSPACE);
 
     {
         for k in KMAP.iter() {
@@ -386,15 +278,14 @@ fn switchuvm(process: &mut Process) {
 
 
 pub fn inituvm(pgdir: &mut PageDir, init: &[u8]) {
-    assert!(init.len() >= kalloc::PGSIZE,
-            "inituvm: size larger than a page");
+    assert!(init.len() >= PGSIZE, "inituvm: size larger than a page");
 
     let mut mem = box [0 as u8; 4096];
 
     mem[..init.len()].copy_from_slice(init);
     map_pages(pgdir,
               VirtAddr::new(0),
-              kalloc::PGSIZE,
+              PGSIZE,
               VirtAddr::new(Box::into_raw(mem) as usize).to_phys(),
               USER | WRITABLE)
         .expect("inituvm: Map pages failed");
@@ -424,8 +315,8 @@ pub fn map_pages(p: &mut [PageDirEntry],
             break;
         }
 
-        a = a.offset::<u8>(kalloc::PGSIZE as isize);
-        pa = pa.offset::<u8>(kalloc::PGSIZE as isize);
+        a = a.offset::<u8>(PGSIZE as isize);
+        pa = pa.offset::<u8>(PGSIZE as isize);
     }
     Ok(())
 }
