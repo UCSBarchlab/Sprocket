@@ -2,6 +2,7 @@ use x86::bits32::irq::IdtEntry;
 use x86::shared::paging::VAddr;
 use x86::shared::dtables::{lidt, DescriptorTablePointer};
 use x86::shared::PrivilegeLevel;
+use x86::shared::control_regs;
 use vm::{Segment, Address};
 use process;
 use timer;
@@ -118,6 +119,12 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
         Interrupt::TimerInt => unsafe {
             timer::TICKS += 1;
         },
+        Interrupt::PageFault => {
+
+            println!("Page fault occured at {:#08x}",
+                     unsafe { control_regs::cr2() });
+            panic!();
+        }
         t => println!("Recieved {} ({:#x})", t, t as u8),
     }
 }

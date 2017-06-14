@@ -16,6 +16,7 @@ const RX_CONFIG_REG: u16 = 0x44;
 const IMR_REG: u16 = 0x3C;
 const ISR_REG: u16 = 0x3E;
 const TSR0_OFF: u16 = 0x10;
+const BASE_BUF_SIZE: usize = 8192;
 const BUF_SIZE: usize = 8192 + 1500 + 16;
 const CAPR: u16 = 0x38;
 const CBA: u16 = 0x3A;
@@ -66,27 +67,21 @@ impl Rtl8139 {
                 (io::inb(rtl.iobase + CMD_REG) & 0x10) != 0
             } {}
 
-            for (i, n) in rtl.rx_buffer.iter_mut().enumerate() {
-                *n = 0xAB
-
-            }
-
-            io::outw(rtl.iobase + CAPR, 0);
 
             let virt_addr = VirtAddr::new(&mut (rtl.rx_buffer[0]) as *mut u8 as usize);
             println!("Buffer lives at {:#08x}", virt_addr.to_phys().addr());
             io::outl(rtl.iobase + RB_START_REG, virt_addr.to_phys().addr() as u32);
-            println!("CAPR {:#08x}", rtl.get_capr());
 
             // Enable interrupts for TX OK & RX OK
-            io::outw(rtl.iobase + IMR_REG, (TX_OK | RX_OK).bits);
+            io::outw(rtl.iobase + IMR_REG, IntStatus::all().bits);
 
             // Enable card in promiscuous mode, enable wrap bit,
             // tell it the size of the buffer
-            io::outl(rtl.iobase + RX_CONFIG_REG, 0xf | (1 << 7));
+            let config = WRAP | ACCEPT_PHYS_MATCH | ACCEPT_BCAST | RX_BUF_8K;
+            io::outl(rtl.iobase + RX_CONFIG_REG, config.bits);
 
             // Enable TX and RX
-            io::outb(rtl.iobase + CMD_REG, 0x0c);
+            io::outb(rtl.iobase + CMD_REG, (RX_ENABLE | TX_ENABLE).bits);
 
             // Unmask NIC interrupts in the PIC
             let (line, _) = rtl.pci.read_irq();
@@ -116,42 +111,76 @@ impl Rtl8139 {
     }
 
     pub fn get_capr(&self) -> usize {
-        let addr = unsafe { io::inw(self.iobase + CAPR) };
-        if addr > BUF_SIZE as u16 {
-            (addr as usize) - BUF_SIZE
-        } else {
-            addr as usize
-        }
+        unsafe { io::inw(self.iobase + CAPR) as usize }
     }
 
     pub fn interrupt(&mut self) {
-        println!("{:#04x}", self.get_capr());
-        println!("{:?}", self.get_isr());
-        println!("Packet header: {:#04x}", self.get_rx_hdr());
-        println!("Length: {:#04x}", self.get_rx_len());
-        unsafe {
-            println!("CBA: {:#04x}", io::inw(self.iobase + CBA));
-        }
+        let isr = self.get_isr();
+        println!("{:?}", isr);
         self.clear_isr();
+        while !self.rx_empty() && isr.contains(RX_OK) {
+
+            println!("Packet header: {:?}", self.get_rx_hdr());
+            println!("Length: {:#04x}", self.get_rx_len());
+            unsafe {
+                println!("CBA: {:#04x}", io::inw(self.iobase + CBA));
+            }
+
+            /*
+            {
+                use smoltcp::wire::Ipv4Packet;
+                let b = self.read().unwrap();
+                let c = b.clone();
+                let packet = Ipv4Packet::new(c);
+                if let Ok(p) = packet {
+                    println!("{}", p.src_addr());
+                }
+            }
+            */
+
+            // Ensure that the new CAPR is dword aligned
+            self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
+            println!("NEW CAPR: {:#04x}", self.rx_offset);
+
+            // set CAPR slightly below actual offset because cryptic manual told us to
+            let new_capr = self.rx_offset; // force copy to appease borrowck
+            self.set_capr(new_capr - 0x10);
+
+            if self.rx_offset > BASE_BUF_SIZE {
+                self.rx_offset -= BASE_BUF_SIZE;
+            }
+        }
     }
 
-    fn read(&mut self) -> &[u8] {
-        let len = self.get_rx_len() as usize;
-        &self.rx_buffer[self.rx_offset..len]
+    pub fn rx_empty(&self) -> bool {
+        let reg = unsafe { io::inb(self.iobase + CMD_REG) };
+        CommandReg::from_bits_truncate(reg).contains(RX_BUF_EMPTY)
     }
 
-    fn get_rx_hdr(&self) -> u16 {
+    fn read(&mut self) -> Option<&[u8]> {
+        if !self.rx_empty() {
+            let len = self.get_rx_len() as usize;
+            println!("len={}", len);
+            Some(&self.rx_buffer[self.rx_offset + 4..len])
+        } else {
+            None
+        }
+    }
+
+    fn get_rx_hdr(&self) -> RxHeader {
         let off = self.rx_offset as usize;
         let b1 = self.rx_buffer[off];
         let b2 = self.rx_buffer[off + 1];
-        ((b2 as u16) << 8) | (b1 as u16)
+        let h = RxHeader::from_bits_truncate(((b2 as u16) << 8) | (b1 as u16));
+        h
     }
 
     fn get_rx_len(&self) -> usize {
         let off = self.rx_offset as usize;
         let b1 = self.rx_buffer[off + 2];
         let b2 = self.rx_buffer[off + 3];
-        (((b2 as u16) << 8) | (b1 as u16)) as usize
+        let len = (((b2 as u16) << 8) | (b1 as u16)) as usize;
+        len
     }
 
     fn get_isr(&self) -> IntStatus {
@@ -160,18 +189,42 @@ impl Rtl8139 {
     }
     fn clear_isr(&mut self) {
         unsafe {
-            let reg = io::inw(self.iobase + ISR_REG);
-            io::outw(self.iobase + ISR_REG, reg);
+            io::outw(self.iobase + ISR_REG, 0xffff);
         };
+    }
+
+    fn set_capr(&mut self, off: usize) {
+        assert!(off < BUF_SIZE);
+        unsafe { io::outw(self.iobase + CAPR, off as u16) };
     }
 }
 
 bitflags! {
     pub flags CommandReg: u8 {
-        const BUF_EMPTY = 1,
+        const RX_BUF_EMPTY = 1,
+        // reserved
         const TX_ENABLE = 1 << 2,
         const RX_ENABLE = 1 << 3,
         const RESET     = 1 << 4,
+    }
+}
+
+bitflags! {
+    pub flags RxConfig: u32 {
+        const ACCEPT_ALL = 1,
+        const ACCEPT_PHYS_MATCH = 1 << 1,
+        const ACCEPT_MULTICAST = 1 << 2,
+        const ACCEPT_BCAST = 1 << 3,
+        const ACCEPT_RUNT = 1 << 4,
+        const ACCEPT_ERR = 1 << 5,
+        const WRAP               = 1 << 7,
+        // Max DMA burst config flags are not implemented here
+        const RX_BUF_8K = 0b00 << 11,
+        const RX_BUF_16K = 0b01 << 11,
+        const RX_BUF_32K = 0b10 << 11,
+        const RX_BUF_64K = 0b11 << 11,
+        // RX FIFO Threshold flags are not implemented here
+        const RER8               = 1 << 16,
     }
 }
 
@@ -190,15 +243,37 @@ bitflags! {
     }
 }
 
+bitflags! {
+    pub flags RxHeader: u16 {
+        const RX_OK_          = 1,
+        const FRAME_ALIGN_ERR = 1 << 1,
+        const CRC_ERR         = 1 << 2,
+        const LONG_PKT        = 1 << 3,
+        const RUNT_PKT        = 1 << 4,
+        const INVAL_SYM_ERR   = 1 << 5,
+        const BCAST_PKT       = 1 << 13,
+        const PHYS_MATCH      = 1 << 14,
+        const MULTICAST_PKT   = 1 << 15,
+    }
+}
+
 impl Device for Rtl8139 {
     type RxBuffer = EthernetRxBuffer;
     type TxBuffer = EthernetTxBuffer;
 
     fn receive(&mut self) -> Result<Self::RxBuffer, Error> {
-        unimplemented!();
+        unsafe {
+            if let Some(ref mut n) = NIC {
+                if let Some(ref b) = n.read() {
+                    let rx = EthernetRxBuffer(b);
+                    return Ok(rx);
+                }
+            }
+        }
+        Err(Error::Exhausted)
     }
 
-    fn transmit(&mut self, length: usize) -> Result<Self::TxBuffer, Error> {
+    fn transmit(&mut self, _length: usize) -> Result<Self::TxBuffer, Error> {
         unimplemented!();
     }
 
@@ -229,16 +304,10 @@ impl Drop for EthernetTxBuffer {
     }
 }
 
-pub struct EthernetRxBuffer(&'static mut [u8]);
+pub struct EthernetRxBuffer(pub &'static [u8]);
 
 impl AsRef<[u8]> for EthernetRxBuffer {
     fn as_ref(&self) -> &[u8] {
-        self.0
-    }
-}
-
-impl AsMut<[u8]> for EthernetRxBuffer {
-    fn as_mut(&mut self) -> &mut [u8] {
         self.0
     }
 }
@@ -248,6 +317,13 @@ impl Drop for EthernetRxBuffer {
         unsafe {
             //NIC.as_mut().unwrap().hw_transmit(self.0);
             // update CAPR to point to next packet, no longer need this
+            println!("packet is done!");
+            if let Some(ref mut n) = NIC {
+                panic!();
+                n.rx_offset = (n.rx_offset + self.0.len()) % BUF_SIZE;
+                let new_capr = n.rx_offset;
+                n.set_capr(new_capr);
+            }
         }
     }
 }
