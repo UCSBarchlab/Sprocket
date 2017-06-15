@@ -14,6 +14,7 @@
 
 extern crate rlibc;
 extern crate alloc;
+#[macro_use]
 extern crate collections;
 extern crate x86;
 extern crate slice_cast;

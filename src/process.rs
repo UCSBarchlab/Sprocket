@@ -217,6 +217,12 @@ pub fn userinit() {
 //
 impl Cpu {}
 
+/// suspend execution until an event occurs
+pub fn sleep() {
+    use x86;
+    unsafe { x86::shared::halt() }; // halt until interrupts come in
+}
+
 pub struct Scheduler {
     ptable: LinkedList<Process>,
     current: Option<Process>,
@@ -236,9 +242,57 @@ impl Scheduler {
 
 
     pub fn scheduler(&mut self) -> ! {
-        loop {
-            unsafe { irq::disable() };
+        unsafe { irq::enable() };
 
+        use rtl8139;
+        #[allow(unused_imports)]
+        use smoltcp::phy::Device;
+        use smoltcp::wire::{PrettyPrinter, EthernetFrame};
+        use smoltcp::iface::{EthernetInterface, SliceArpCache, ArpCache};
+        use smoltcp::wire::{EthernetAddress, IpAddress};
+        use smoltcp::socket::{AsSocket, SocketSet};
+        use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+
+        let arp_cache = SliceArpCache::new(vec![Default::default(); 8]);
+        let hw_addr = unsafe { EthernetAddress(rtl8139::NIC.as_mut().unwrap().mac_address()) };
+
+        let address = IpAddress::v4(128, 111, 46, 232); // David's machine in ArchLab
+        let port = 19999;
+
+        let protocol_addr = IpAddress::v4(10, 0, 0, 4);
+        let mut nic = unsafe { rtl8139::NIC.as_mut().unwrap() };
+        let mut interface = EthernetInterface::new(nic,
+                                                   Box::new(arp_cache) as Box<ArpCache>,
+                                                   hw_addr,
+                                                   [protocol_addr]);
+
+        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
+        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
+        let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+
+        let mut sockets = SocketSet::new(vec![]);
+        let tcp_handle = sockets.add(tcp_socket);
+
+        {
+            let socket: &mut TcpSocket = sockets.get_mut(tcp_handle).as_socket();
+            socket.connect((address, port), (protocol_addr, 49500)).unwrap();
+        }
+
+        loop {
+            sleep();
+
+
+
+            unsafe {
+                let buffer = rtl8139::NIC.as_mut().unwrap().receive().unwrap();
+                println!("{}",
+                         PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &buffer))
+
+            }
+
+
+
+            /*
             // scan queue to find runnable process (if any exist)
             let run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
             if let Some(idx) = run_idx {
@@ -252,7 +306,7 @@ impl Scheduler {
                 vm::switchkvm();
 
             }
-            unsafe { irq::enable() };
+            */
         }
     }
 

@@ -8,6 +8,7 @@ use alloc::boxed::Box;
 use mem::{VirtAddr, Address};
 use smoltcp::Error;
 use smoltcp::phy::Device;
+use process::sleep;
 
 const CONFIG_REG1: u16 = 0x52;
 const CMD_REG: u16 = 0x37;
@@ -94,7 +95,7 @@ impl Rtl8139 {
         }
     }
 
-    fn get_mac_address(&mut self) -> [u8; 6] {
+    pub fn mac_address(&mut self) -> [u8; 6] {
         let mut mac = [0; 6];
         for (off, byte) in mac.iter_mut().enumerate() {
             *byte = unsafe { io::inb(self.iobase + (off as u16)) };
@@ -118,6 +119,7 @@ impl Rtl8139 {
         let isr = self.get_isr();
         //println!("{:?}", isr);
         self.clear_isr();
+        /*
         while !self.rx_empty() && isr.contains(RX_OK) {
 
             /*
@@ -128,11 +130,13 @@ impl Rtl8139 {
             }
             */
 
+            /*
             let b = {
                 self.read().unwrap().to_vec()
             };
             use smoltcp::wire::{EthernetFrame, PrettyPrinter};
             print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &b));
+            */
 
             // Ensure that the new CAPR is dword aligned
             self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
@@ -146,6 +150,7 @@ impl Rtl8139 {
                 self.rx_offset %= BASE_BUF_SIZE;
             }
         }
+    */
     }
 
     pub fn rx_empty(&self) -> bool {
@@ -154,7 +159,8 @@ impl Rtl8139 {
     }
 
     fn read(&mut self) -> Option<&[u8]> {
-        if !self.rx_empty() {
+        // TODO: perhaps better error handling to skip CAPR past defective packet
+        if !self.rx_empty() && self.get_rx_hdr().contains(RX_OK_) {
             let len = self.get_rx_len() as usize;
             //println!("len={}", len);
             Some(&self.rx_buffer[self.rx_offset + 4..self.rx_offset + 4 + len])
@@ -192,6 +198,20 @@ impl Rtl8139 {
     fn set_capr(&mut self, off: usize) {
         assert!(off < BUF_SIZE);
         unsafe { io::outw(self.iobase + CAPR, off as u16) };
+    }
+
+    // move CAPR to the next packet header
+    pub fn update_capr(&mut self) {
+        self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
+        //println!("NEW CAPR: {:#04x}", self.rx_offset);
+
+        // set CAPR slightly below actual offset because cryptic manual told us to
+        let new_capr = self.rx_offset; // force copy to appease borrowck
+        self.set_capr(new_capr - 0x10);
+
+        if self.rx_offset >= BASE_BUF_SIZE {
+            self.rx_offset %= BASE_BUF_SIZE;
+        }
     }
 }
 
@@ -260,6 +280,9 @@ impl Device for Rtl8139 {
     fn receive(&mut self) -> Result<Self::RxBuffer, Error> {
         unsafe {
             if let Some(ref mut n) = NIC {
+                while n.rx_empty() {
+                    sleep();
+                }
                 if let Some(ref b) = n.read() {
                     let rx = EthernetRxBuffer(b);
                     return Ok(rx);
@@ -315,9 +338,8 @@ impl Drop for EthernetRxBuffer {
             // update CAPR to point to next packet, no longer need this
             //println!("packet is done!");
             if let Some(ref mut n) = NIC {
-                n.rx_offset = (n.rx_offset + self.0.len()) % BUF_SIZE;
-                let new_capr = n.rx_offset;
-                n.set_capr(new_capr);
+                n.update_capr();
+                // Ensure that the new CAPR is dword aligned
             }
         }
     }
