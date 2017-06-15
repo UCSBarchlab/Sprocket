@@ -126,24 +126,11 @@ impl Rtl8139 {
                 println!("CBA: {:#04x}", io::inw(self.iobase + CBA));
             }
 
-            let mut c: [u8; 256] = [0; 256];
             {
+
                 let b = self.read().unwrap();
-                let min = ::core::cmp::min(b.len(), 256);
-
-                println!("{:?}", &b);
-                println!("{:?}", &b as *const _);
-                c[..min].copy_from_slice(&b[..min]);
-
-                use smoltcp::wire::Ipv4Packet;
-                let d = c[..min].as_ref();
-                println!("{:?}", d);
-                /*
-                let packet = Ipv4Packet::new(&c[..min]);
-                if let Ok(p) = packet {
-                    println!("{}", p.src_addr());
-                }
-                */
+                use smoltcp::wire::{EthernetFrame, PrettyPrinter};
+                print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &b));
             }
 
             // Ensure that the new CAPR is dword aligned
@@ -154,8 +141,8 @@ impl Rtl8139 {
             let new_capr = self.rx_offset; // force copy to appease borrowck
             self.set_capr(new_capr - 0x10);
 
-            if self.rx_offset > BASE_BUF_SIZE {
-                self.rx_offset -= BASE_BUF_SIZE;
+            if self.rx_offset >= BASE_BUF_SIZE {
+                self.rx_offset %= BASE_BUF_SIZE;
             }
         }
     }
