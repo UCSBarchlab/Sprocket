@@ -69,11 +69,6 @@ initcode: src/initcode.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o initcode.out initcode.o
 	$(OBJCOPY) -S -O binary initcode.out initcode
 
-entryother: src/entryother.S
-	$(CC) $(CFLAGS) -fno-pic -nostdinc -I. -c src/entryother.S
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0x7000 -o bootblockother.o entryother.o
-	$(OBJCOPY) -S -O binary -j .text bootblockother.o entryother
-
 cofflos.img: bootblock kernel fs.img
 	dd if=/dev/zero of=cofflos.img count=10000
 	dd if=bootblock of=cofflos.img conv=notrunc
@@ -98,8 +93,8 @@ trapasm.o: src/trapasm.S
 swtch.o: src/swtch.S
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o swtch.o src/swtch.S
 
-kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode vectors.o trapasm.o swtch.o
-	@ld -n --gc-section -T kernel.ld -o kernel entry.o vectors.o trapasm.o swtch.o $(rust_os) -b binary initcode entryother
+kernel: cargo $(rust_os) entry.o kernel.ld initcode vectors.o trapasm.o swtch.o
+	@ld -n --gc-section -T kernel.ld -o kernel entry.o vectors.o trapasm.o swtch.o $(rust_os) -b binary initcode
 	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
 
 -include *.d
@@ -109,7 +104,7 @@ cargo:
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*.o *.d *.asm *.sym vectors.S bootblock entryother \
+	*.o *.d *.asm *.sym vectors.S bootblock \
 	initcode initcode.out kernel xv6.img fs.img kernelmemfs mkfs \
 	.gdbinit \
 	$(UPROGS)
