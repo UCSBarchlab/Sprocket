@@ -116,26 +116,27 @@ impl Rtl8139 {
 
     pub fn interrupt(&mut self) {
         let isr = self.get_isr();
-        println!("{:?}", isr);
+        //println!("{:?}", isr);
         self.clear_isr();
         while !self.rx_empty() && isr.contains(RX_OK) {
 
+            /*
             println!("Packet header: {:?}", self.get_rx_hdr());
             println!("Length: {:#04x}", self.get_rx_len());
             unsafe {
                 println!("CBA: {:#04x}", io::inw(self.iobase + CBA));
             }
+            */
 
-            {
-
-                let b = self.read().unwrap();
-                use smoltcp::wire::{EthernetFrame, PrettyPrinter};
-                print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &b));
-            }
+            let b = {
+                self.read().unwrap().to_vec()
+            };
+            use smoltcp::wire::{EthernetFrame, PrettyPrinter};
+            print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &b));
 
             // Ensure that the new CAPR is dword aligned
             self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
-            println!("NEW CAPR: {:#04x}", self.rx_offset);
+            //println!("NEW CAPR: {:#04x}", self.rx_offset);
 
             // set CAPR slightly below actual offset because cryptic manual told us to
             let new_capr = self.rx_offset; // force copy to appease borrowck
@@ -155,7 +156,7 @@ impl Rtl8139 {
     fn read(&mut self) -> Option<&[u8]> {
         if !self.rx_empty() {
             let len = self.get_rx_len() as usize;
-            println!("len={}", len);
+            //println!("len={}", len);
             Some(&self.rx_buffer[self.rx_offset + 4..self.rx_offset + 4 + len])
         } else {
             None
@@ -312,9 +313,8 @@ impl Drop for EthernetRxBuffer {
         unsafe {
             //NIC.as_mut().unwrap().hw_transmit(self.0);
             // update CAPR to point to next packet, no longer need this
-            println!("packet is done!");
+            //println!("packet is done!");
             if let Some(ref mut n) = NIC {
-                panic!();
                 n.rx_offset = (n.rx_offset + self.0.len()) % BUF_SIZE;
                 let new_capr = n.rx_offset;
                 n.set_capr(new_capr);

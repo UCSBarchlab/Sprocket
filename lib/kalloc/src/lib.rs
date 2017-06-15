@@ -4,7 +4,7 @@
 
 extern crate mem_utils;
 
-use mem_utils::{PhysAddr, VirtAddr, Address, PGSIZE, PHYSTOP};
+use mem_utils::{VirtAddr, Address, PGSIZE, PHYSTOP};
 
 extern "C" {
     pub static mut end: u8;
@@ -48,16 +48,6 @@ pub unsafe fn kinit1(vstart: *mut u8, vend: *mut u8) {
 
 pub unsafe fn kinit2(vstart: *mut u8, vend: *mut u8) {
     free_range(vstart, vend);
-}
-
-unsafe fn free_range_(vstart: *mut u8, vend: *mut u8) {
-    let mut p = page_roundup_mut(vstart);
-    //println!("start: {:#?}", p);
-    while p.offset(PGSIZE as isize) <= vend {
-        kfree(p);
-        p = p.offset(PGSIZE as isize);
-    }
-    //println!("end: {:#?}", p.offset(-(PGSIZE as isize)));
 }
 
 unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
@@ -196,21 +186,30 @@ pub fn kalloc(size: usize) -> Result<*mut u8, &'static str> {
 // See https://doc.rust-lang.org/book/custom-allocators.html for more info
 
 #[no_mangle]
-#[allow(unused_variables)]
-pub extern "C" fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
-    // Keep allocator logic simple for now, by forbidding allocation larger than 1 page
+pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
     kalloc(size).expect("Allocation failed")
 }
 
 #[no_mangle]
-#[allow(unused_variables)]
-pub extern "C" fn __rust_usable_size(size: usize, align: usize) -> usize {
+pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 {
+    let new_mem = kalloc(size).expect("Allocation failed");
+    let num_pages = (size / PGSIZE + 1) * PGSIZE;
+    {
+        let slice = unsafe { ::core::slice::from_raw_parts_mut(new_mem, num_pages * PGSIZE) };
+        for b in slice.iter_mut() {
+            *b = 0;
+        }
+    }
+    new_mem
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_usable_size(size: usize, _align: usize) -> usize {
     (size / PGSIZE + 1) * PGSIZE
 }
 
 #[no_mangle]
-#[allow(unused_variables)]
-pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, align: usize) {
+pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, _align: usize) {
     let num_pages = (PGSIZE + size - 1) / PGSIZE;
     for off in 0..num_pages {
         unsafe {
@@ -220,11 +219,10 @@ pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, align: usize) {
 }
 
 #[no_mangle]
-#[allow(unused_variables)]
 pub extern "C" fn __rust_reallocate(ptr: *mut u8,
                                     size: usize,
                                     new_size: usize,
-                                    align: usize)
+                                    _align: usize)
                                     -> *mut u8 {
     let num_old_pages = (PGSIZE + size - 1) / PGSIZE;
     let num_new_pages = (PGSIZE + new_size - 1) / PGSIZE;
