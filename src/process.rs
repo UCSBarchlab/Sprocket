@@ -7,7 +7,6 @@ use x86::shared::PrivilegeLevel;
 use core;
 use alloc::boxed::Box;
 use vm;
-use kalloc;
 use traps;
 use collections::linked_list::LinkedList;
 use fs;
@@ -239,27 +238,6 @@ impl Scheduler {
     pub fn scheduler(&mut self) -> ! {
         loop {
             unsafe { irq::disable() };
-
-            use smoltcp::phy::Device;
-            use smoltcp::wire::{PrettyPrinter, EthernetFrame};
-            use rtl8139;
-
-            unsafe {
-                // if let Ok(b) = rtl8139::NIC.as_mut().unwrap().receive() {
-                //     let frame = EthernetFrame::new(b);
-                //     println!("src: {}", frame.unwrap().src_addr());
-                //     //let pr = PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &y);
-                //     //print!("{}", pr);
-                //     //print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &(b.0)));
-                // }
-                // if let Some(r) = rtl8139::NIC.as_mut() {
-                //     if !r.rx_empty() {
-                //         println!("Non-empty!");
-                //     }
-                // }
-            }
-
-
 
             // scan queue to find runnable process (if any exist)
             let run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);

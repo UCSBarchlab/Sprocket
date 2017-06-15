@@ -4,7 +4,6 @@ use x86::shared::dtables::{lidt, DescriptorTablePointer};
 use x86::shared::PrivilegeLevel;
 use x86::shared::control_regs;
 use vm::Segment;
-use mem::Address;
 use process;
 use timer;
 use rtl8139;

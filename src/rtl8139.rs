@@ -5,7 +5,7 @@ use x86::shared::io;
 pub const REALTEK: u16 = 0x10ec;
 pub const RTL_8139: u16 = 0x8139;
 use alloc::boxed::Box;
-use mem::{VirtAddr, PhysAddr, Address};
+use mem::{VirtAddr, Address};
 use smoltcp::Error;
 use smoltcp::phy::Device;
 

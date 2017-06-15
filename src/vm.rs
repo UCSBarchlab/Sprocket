@@ -1,4 +1,3 @@
-use kalloc;
 use alloc::boxed::Box;
 use core;
 use process;
@@ -106,11 +105,11 @@ pub enum Segment {
 pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
 // Initialize a SegmentDescriptor in a manner compatible with xv6
-fn seg2(base: usize,
-        limit: usize,
-        ty: descriptor::Flags,
-        ring: shared::PrivilegeLevel)
-        -> SegmentDescriptor {
+fn seg(base: usize,
+       limit: usize,
+       ty: descriptor::Flags,
+       ring: shared::PrivilegeLevel)
+       -> SegmentDescriptor {
     SegmentDescriptor {
         limit1: ((limit >> 12) & 0xffff) as u16, // should be >> 12
         base1: (base & 0xffff) as u16,
@@ -123,6 +122,7 @@ fn seg2(base: usize,
     }
 }
 
+/*
 fn seg(base: usize,
        limit: usize,
        ty: descriptor::Flags,
@@ -138,8 +138,8 @@ fn seg(base: usize,
         limit2_flags: seg::FLAGS_DB | seg::FLAGS_G |
                       seg::Flags::from_limit2(((0xffffffff & 0xF0000) >> 16) as u8),
     }
-
 }
+*/
 
 fn seg16(base: usize,
          limit: usize,
