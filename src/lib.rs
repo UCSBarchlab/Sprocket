@@ -3,11 +3,9 @@
 #![feature(const_fn)]
 #![feature(asm)]
 #![feature(repr_simd)]
-#![feature(allocator)]
 #![feature(alloc)]
 #![feature(box_syntax)]
 #![feature(collections)]
-#![allocator]
 #![feature(drop_types_in_const)]
 
 #![allow(dead_code)]
@@ -53,7 +51,6 @@ mod rtl8139;
 use mem::{PhysAddr, Address};
 pub use traps::trap;
 use x86::shared::irq;
-
 #[no_mangle]
 pub extern "C" fn main() {
     unsafe {

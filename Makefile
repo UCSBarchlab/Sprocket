@@ -10,7 +10,8 @@ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null | head -n 1)
 arch ?= x86
-target ?= i686-unknown-linux-gnu
+host_target ?= i686-unknown-linux-gnu
+target ?= i686-cofflos
 assembly_source_files := $(wildcard src/*.S)
 assembly_object_files := $(patsubst src/%.S, \
     %.o, $(assembly_source_files))
@@ -53,7 +54,7 @@ qemu-net: fs.img cofflos.img
 
 # -netdev bridge,id=br0 -object filter-dump,netdev=br0,id=br0,file='dump.pcap'
 
-rust_os := target/$(target)/debug/librv6.a
+rust_os := target/$(target)/debug/libcofflos.a
 
 # Build the bootloader block
 bootblock: src/bootasm.S src/bootmain.rs
@@ -80,10 +81,10 @@ cofflos.img: bootblock kernel fs.img
 
 fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README
 	dd if=/dev/zero of=fs.img bs=512 count=1000
-	cargo run --manifest-path lib/simple_fs/Cargo.toml -- fs.img README
+	cargo run --manifest-path lib/simple_fs/Cargo.toml --target $(host_target) -- fs.img README
 
 mkfs: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs
-	cargo build --manifest-path lib/simple_fs/Cargo.toml
+	cargo build --target $(host_target) --manifest-path lib/simple_fs/Cargo.toml
 
 entry.o: src/entry.S
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o entry.o src/entry.S
@@ -104,7 +105,7 @@ kernel: cargo $(rust_os) entry.o entryother kernel.ld initcode vectors.o trapasm
 -include *.d
 
 cargo:
-	cargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse
+	xargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse
 
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
