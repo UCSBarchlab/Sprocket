@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use mem::{VirtAddr, Address};
 use smoltcp::Error;
 use smoltcp::phy::Device;
-use process::sleep;
+use collections::Vec;
 
 const CONFIG_REG1: u16 = 0x52;
 const CMD_REG: u16 = 0x37;
@@ -23,13 +23,18 @@ const CAPR: u16 = 0x38;
 const CBA: u16 = 0x3A;
 
 const NUM_TX_BUFFERS: u8 = 4;
+const TX_BUF_SIZE: usize = 2048;
+
+const TSD: [u16; 4] = [0x10, 0x14, 0x18, 0x1c]; // Transmit status registers
+const TSAD: [u16; 4] = [0x20, 0x24, 0x28, 0x2c]; // Transmit start address of descriptor
 
 pub struct Rtl8139 {
     pci: pci::PciDevice,
     iobase: u16,
     rx_buffer: Box<[u8; BUF_SIZE]>,
-    tx_buffer: Box<[[u8; 1600]; NUM_TX_BUFFERS as usize]>,
+    tx_buffer: Box<[[u8; TX_BUF_SIZE]; NUM_TX_BUFFERS as usize]>,
     tx_offset: u8, // which TX buffer we're using
+    free_tx_buffers: u8,
     rx_offset: usize, // where in the RX ring buffer we are.  SW counterpart to CAPR
 }
 
@@ -54,8 +59,9 @@ impl Rtl8139 {
                 pci: dev,
                 iobase: iobase,
                 rx_buffer: box [0; BUF_SIZE],
-                tx_buffer: box [[0; 1600]; NUM_TX_BUFFERS as usize],
+                tx_buffer: box [[0; TX_BUF_SIZE]; NUM_TX_BUFFERS as usize],
                 tx_offset: 0,
+                free_tx_buffers: NUM_TX_BUFFERS,
                 rx_offset: 0,
             };
 
@@ -69,9 +75,16 @@ impl Rtl8139 {
             } {}
 
 
+            // Inform card about RX buffer
             let virt_addr = VirtAddr::new(&mut (rtl.rx_buffer[0]) as *mut u8 as usize);
             println!("Buffer lives at {:#08x}", virt_addr.to_phys().addr());
             io::outl(rtl.iobase + RB_START_REG, virt_addr.to_phys().addr() as u32);
+
+            // Inform card about TX buffers
+            for (off, tsad) in TSAD.iter().enumerate() {
+                let virt_addr = VirtAddr::new(&rtl.tx_buffer[off][0] as *const u8 as usize);
+                io::outl(rtl.iobase + tsad, virt_addr.to_phys().addr() as u32);
+            }
 
             // Enable interrupts for TX OK & RX OK
             io::outw(rtl.iobase + IMR_REG, IntStatus::all().bits);
@@ -107,8 +120,39 @@ impl Rtl8139 {
         (tx_off + 1) % NUM_TX_BUFFERS
     }
 
+    pub fn tx_available(&self) -> bool {
+        self.free_tx_buffers > 0
+    }
+
     fn hw_transmit(&mut self, buf: &[u8]) {
-        unimplemented!();
+        println!("Transmitting!");
+        let size = buf.len();
+        //assert!(size >= 60); // min Ethernet frame size
+        let offset = self.tx_offset;
+        let mut tsd = self.tsd(offset);
+        assert!(tsd.contains(OWN));
+
+        tsd.set_length(size);
+        tsd.remove(OWN);
+
+        // copy the buffer into the slice
+        self.tx_buffer[offset as usize][..size].copy_from_slice(buf);
+
+        self.set_tsd(tsd, offset);
+
+        // update TX offset to point to next buffer
+        //self.tx_offset = Self::next_tx_offset(self.tx_offset);
+    }
+
+    // access a TSD
+    fn tsd(&self, off: u8) -> TxStatusDesc {
+        unsafe { TxStatusDesc::from_bits(io::inl(self.iobase + TSD[off as usize])).unwrap() }
+    }
+
+    fn set_tsd(&mut self, tsad: TxStatusDesc, off: u8) {
+        unsafe {
+            io::outl(self.iobase + TSD[off as usize], tsad.bits);
+        }
     }
 
     pub fn get_capr(&self) -> usize {
@@ -116,9 +160,16 @@ impl Rtl8139 {
     }
 
     pub fn interrupt(&mut self) {
-        let isr = self.get_isr();
+        //let isr = self.get_isr();
         //println!("{:?}", isr);
         self.clear_isr();
+
+        while self.tsd(self.tx_offset).contains(TOK | OWN) &&
+              self.free_tx_buffers < NUM_TX_BUFFERS {
+            self.tx_offset = Self::next_tx_offset(self.tx_offset);
+            self.free_tx_buffers += 1;
+        }
+
         /*
         while !self.rx_empty() && isr.contains(RX_OK) {
 
@@ -189,6 +240,7 @@ impl Rtl8139 {
         let reg = unsafe { io::inw(self.iobase + ISR_REG) };
         IntStatus::from_bits(reg).unwrap()
     }
+
     fn clear_isr(&mut self) {
         unsafe {
             io::outw(self.iobase + ISR_REG, 0xffff);
@@ -202,6 +254,7 @@ impl Rtl8139 {
 
     // move CAPR to the next packet header
     pub fn update_capr(&mut self) {
+        // Ensure that the new CAPR is dword aligned
         self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
         //println!("NEW CAPR: {:#04x}", self.rx_offset);
 
@@ -273,6 +326,51 @@ bitflags! {
     }
 }
 
+// TSD0-3
+bitflags! {
+    pub flags TxStatusDesc: u32 {
+        const LEN_0 = 1,
+        const LEN_1 = 1 << 1,
+        const LEN_2 = 1 << 2,
+        const LEN_3 = 1 << 3,
+        const LEN_4 = 1 << 4,
+        const LEN_5 = 1 << 5,
+        const LEN_6 = 1 << 6,
+        const LEN_7 = 1 << 7,
+        const LEN_8 = 1 << 8,
+        const LEN_9 = 1 << 9,
+        const LEN_10 = 1 << 10,
+        const LEN_11 = 1 << 11,
+        const LEN_12 = 1 << 12,
+        const OWN  = 1 << 13,
+        const TUN  = 1 << 14,
+        const TOK  = 1 << 15,
+        const ERTX_0 = 1 << 16,
+        const ERTX_1 = 1 << 17,
+        const ERTX_2 = 1 << 18,
+        const ERTX_3 = 1 << 19,
+        const ERTX_4 = 1 << 20,
+        const ERTX_5 = 1 << 21,
+        const RESERVED_1 = 1 << 22,
+        const RESERVED_2 = 1 << 23,
+        const NCC_0 = 1 << 24,
+        const NCC_1 = 1 << 25,
+        const NCC_2 = 1 << 26,
+        const NCC_3 = 1 << 27,
+        const CDH  = 1 << 28,
+        const OWC  = 1 << 29,
+        const TABT = 1 << 30,
+        const CRS  = 1 << 31,
+    }
+}
+
+impl TxStatusDesc {
+    fn set_length(&mut self, length: usize) {
+        self.bits &= !0xFFF; // zero out length
+        self.bits |= (length & 0xFFF) as u32;
+    }
+}
+
 impl Device for Rtl8139 {
     type RxBuffer = EthernetRxBuffer;
     type TxBuffer = EthernetTxBuffer;
@@ -280,9 +378,6 @@ impl Device for Rtl8139 {
     fn receive(&mut self) -> Result<Self::RxBuffer, Error> {
         unsafe {
             if let Some(ref mut n) = NIC {
-                while n.rx_empty() {
-                    sleep();
-                }
                 if let Some(ref b) = n.read() {
                     let rx = EthernetRxBuffer(b);
                     return Ok(rx);
@@ -293,7 +388,12 @@ impl Device for Rtl8139 {
     }
 
     fn transmit(&mut self, _length: usize) -> Result<Self::TxBuffer, Error> {
-        unimplemented!();
+        if self.tx_available() {
+            self.free_tx_buffers -= 1;
+            Ok(EthernetTxBuffer(vec![0; _length]))
+        } else {
+            Err(Error::Exhausted)
+        }
     }
 
     fn mtu(&self) -> usize {
@@ -301,24 +401,24 @@ impl Device for Rtl8139 {
     }
 }
 
-pub struct EthernetTxBuffer(&'static mut [u8]);
+pub struct EthernetTxBuffer(pub Vec<u8>);
 
 impl AsRef<[u8]> for EthernetTxBuffer {
     fn as_ref(&self) -> &[u8] {
-        self.0
+        &self.0
     }
 }
 
 impl AsMut<[u8]> for EthernetTxBuffer {
     fn as_mut(&mut self) -> &mut [u8] {
-        self.0
+        &mut self.0
     }
 }
 
 impl Drop for EthernetTxBuffer {
     fn drop(&mut self) {
         unsafe {
-            NIC.as_mut().unwrap().hw_transmit(self.0);
+            NIC.as_mut().unwrap().hw_transmit(&self.0);
         }
     }
 }
@@ -339,7 +439,6 @@ impl Drop for EthernetRxBuffer {
             //println!("packet is done!");
             if let Some(ref mut n) = NIC {
                 n.update_capr();
-                // Ensure that the new CAPR is dword aligned
             }
         }
     }
