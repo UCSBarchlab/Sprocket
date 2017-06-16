@@ -78,7 +78,9 @@ pub unsafe fn validate() {
             return;
         }
     }
-    panic!();
+    if count > 0 {
+        panic!();
+    }
 }
 
 
@@ -193,9 +195,9 @@ pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
 #[no_mangle]
 pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 {
     let new_mem = kalloc(size).expect("Allocation failed");
-    let num_pages = (size / PGSIZE + 1) * PGSIZE;
+    let num_bytes = (size / PGSIZE + 1) * PGSIZE;
     {
-        let slice = unsafe { ::core::slice::from_raw_parts_mut(new_mem, num_pages * PGSIZE) };
+        let slice: &mut [u8] = unsafe { ::core::slice::from_raw_parts_mut(new_mem, num_bytes) };
         for b in slice.iter_mut() {
             *b = 0;
         }
