@@ -195,7 +195,7 @@ pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
 #[no_mangle]
 pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 {
     let new_mem = kalloc(size).expect("Allocation failed");
-    let num_bytes = (size / PGSIZE + 1) * PGSIZE;
+    let num_bytes = ((size + PGSIZE - 1) / PGSIZE) * PGSIZE;
     {
         let slice: &mut [u8] = unsafe { ::core::slice::from_raw_parts_mut(new_mem, num_bytes) };
         for b in slice.iter_mut() {
@@ -207,7 +207,7 @@ pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 
 
 #[no_mangle]
 pub extern "C" fn __rust_usable_size(size: usize, _align: usize) -> usize {
-    (size / PGSIZE + 1) * PGSIZE
+    (size + PGSIZE - 1) / PGSIZE
 }
 
 #[no_mangle]
