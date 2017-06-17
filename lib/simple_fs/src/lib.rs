@@ -421,7 +421,8 @@ impl<T> FileSystem<T>
 
                 // now, copy a block at a time, truncating the last block as necessary
                 // this is fucked for so many reasons, fix later
-                for mut chunk in short_buf[(offset as usize) % BLOCKSIZE..].chunks_mut(BLOCKSIZE) {
+                for mut chunk in short_buf[BLOCKSIZE + (offset as usize) % BLOCKSIZE..]
+                    .chunks_mut(BLOCKSIZE) {
                     let blockaddr = self.bmap(inode, offset / (BLOCKSIZE as u32))?;
                     self.disk.read(&mut chunk, inode.device, blockaddr)?;
                     offset += chunk.len() as u32;
