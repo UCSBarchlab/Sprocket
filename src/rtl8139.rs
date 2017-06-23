@@ -125,7 +125,7 @@ impl Rtl8139 {
     }
 
     fn hw_transmit(&mut self, buf: &[u8]) {
-        println!("Transmitting!");
+        println!("TX START");
         let size = buf.len();
         //assert!(size >= 60); // min Ethernet frame size
         let offset = self.tx_offset;
@@ -139,6 +139,7 @@ impl Rtl8139 {
         self.tx_buffer[offset as usize][..size].copy_from_slice(buf);
 
         self.set_tsd(tsd, offset);
+        self.tx_offset = Self::next_tx_offset(self.tx_offset);
 
         // update TX offset to point to next buffer
         //self.tx_offset = Self::next_tx_offset(self.tx_offset);
@@ -166,7 +167,6 @@ impl Rtl8139 {
 
         while self.tsd(self.tx_offset).contains(TOK | OWN) &&
               self.free_tx_buffers < NUM_TX_BUFFERS {
-            self.tx_offset = Self::next_tx_offset(self.tx_offset);
             self.free_tx_buffers += 1;
         }
 
@@ -224,16 +224,14 @@ impl Rtl8139 {
         let off = self.rx_offset as usize;
         let b1 = self.rx_buffer[off];
         let b2 = self.rx_buffer[off + 1];
-        let h = RxHeader::from_bits_truncate(((b2 as u16) << 8) | (b1 as u16));
-        h
+        RxHeader::from_bits_truncate(((b2 as u16) << 8) | (b1 as u16))
     }
 
     fn get_rx_len(&self) -> usize {
         let off = self.rx_offset as usize;
         let b1 = self.rx_buffer[off + 2];
         let b2 = self.rx_buffer[off + 3];
-        let len = (((b2 as u16) << 8) | (b1 as u16)) as usize;
-        len
+        (((b2 as u16) << 8) | (b1 as u16)) as usize
     }
 
     fn get_isr(&self) -> IntStatus {

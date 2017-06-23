@@ -74,9 +74,9 @@ cofflos.img: bootblock kernel fs.img
 	dd if=bootblock of=cofflos.img conv=notrunc
 	dd if=kernel of=cofflos.img seek=1 conv=notrunc
 
-fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README
+fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README small.html
 	dd if=/dev/zero of=fs.img bs=512 count=1000
-	cargo run --manifest-path lib/simple_fs/Cargo.toml --target $(host_target) -- fs.img README
+	cargo run --manifest-path lib/simple_fs/Cargo.toml --target $(host_target) -- fs.img README small.html
 
 mkfs: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs
 	cargo build --target $(host_target) --manifest-path lib/simple_fs/Cargo.toml

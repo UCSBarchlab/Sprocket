@@ -12,6 +12,8 @@ use collections::linked_list::LinkedList;
 use fs;
 use mem;
 
+use core::str;
+
 pub static mut CPU: Option<Cpu> = None;
 pub static mut SCHEDULER: Option<Scheduler> = None;
 //lazy_static! {
@@ -245,68 +247,50 @@ impl Scheduler {
         unsafe { irq::enable() };
 
         use rtl8139;
-        #[allow(unused_imports)]
-        use smoltcp::phy::Device;
-        use smoltcp::wire::{PrettyPrinter, EthernetFrame};
         use smoltcp::iface::{EthernetInterface, SliceArpCache, ArpCache};
         use smoltcp::wire::{EthernetAddress, IpAddress};
         use smoltcp::socket::{AsSocket, SocketSet};
         use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+        use smoltcp::Error;
 
         let arp_cache = SliceArpCache::new(vec![Default::default(); 8]);
         let hw_addr = unsafe { EthernetAddress(rtl8139::NIC.as_mut().unwrap().mac_address()) };
 
-        let address = IpAddress::v4(128, 111, 46, 232); // David's machine in ArchLab
-        let port = 19999;
-
         let protocol_addr = IpAddress::v4(10, 0, 0, 4);
-        let mut nic = unsafe { rtl8139::NIC.as_mut().unwrap() };
-        let mut interface = EthernetInterface::new(nic,
-                                                   Box::new(arp_cache) as Box<ArpCache>,
-                                                   hw_addr,
-                                                   [protocol_addr]);
+        let nic = unsafe { rtl8139::NIC.as_mut().unwrap() };
+        let mut iface = EthernetInterface::new(nic,
+                                               Box::new(arp_cache) as Box<ArpCache>,
+                                               hw_addr,
+                                               [protocol_addr]);
 
-        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
-        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
+        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 2048]);
+        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 2048]);
         let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
         let mut sockets = SocketSet::new(vec![]);
         let tcp_handle = sockets.add(tcp_socket);
 
-        {
-            let socket: &mut TcpSocket = sockets.get_mut(tcp_handle).as_socket();
-            socket.connect((address, port), (protocol_addr, 49500)).unwrap();
-        }
-
         loop {
-            sleep();
+            {
+                let socket: &mut TcpSocket = sockets.get_mut(tcp_handle).as_socket();
+                if !socket.is_open() {
+                    socket.listen(80).unwrap();
+                }
 
-
-
-            unsafe {
-                let buffer = rtl8139::NIC.as_mut().unwrap().receive().unwrap();
-                println!("{}",
-                         PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &buffer))
-
+                if socket.can_send() {
+                    let data = b"yo dawg\n";
+                    println!("tcp:6969 send data: {:?}",
+                             str::from_utf8(data.as_ref()).unwrap());
+                    socket.send_slice(data).unwrap();
+                    println!("tcp:6969 close");
+                    socket.close();
+                }
             }
 
-
-
-            /*
-            // scan queue to find runnable process (if any exist)
-            let run_idx = self.ptable.iter_mut().position(|p| p.state == ProcState::Runnable);
-            if let Some(idx) = run_idx {
-                // Remove the runnable process from the queue
-                let mut list = self.ptable.split_off(idx);
-                let runnable = list.pop_front().unwrap();
-                self.ptable.append(&mut list);
-
-                self.switch_to(runnable);
-                // we've returned from that context, so reset to our page tables
-                vm::switchkvm();
-
+            match iface.poll(&mut sockets, 10) {
+                Ok(()) | Err(Error::Exhausted) => (),
+                Err(e) => println!("poll error: {}", e),
             }
-            */
         }
     }
 

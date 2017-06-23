@@ -1,4 +1,5 @@
 #![no_std]
+
 #![feature(lang_items)]
 #![feature(const_fn)]
 #![feature(asm)]
@@ -23,6 +24,9 @@ extern crate smoltcp;
 extern crate simple_fs as fs;
 extern crate mem_utils as mem;
 extern crate kalloc;
+#[allow(unused_imports)]
+#[macro_use]
+extern crate log;
 
 #[macro_use]
 extern crate bitflags;
@@ -39,7 +43,7 @@ mod flags;
 mod vm;
 mod traps;
 mod mmu;
-mod file;
+//mod file;
 mod picirq;
 mod uart;
 mod timer;
@@ -47,10 +51,13 @@ mod timer;
 mod ide;
 mod pci;
 mod rtl8139;
+mod logger;
 
 use mem::{PhysAddr, Address};
 pub use traps::trap;
 use x86::shared::irq;
+use collections::borrow::ToOwned;
+
 #[no_mangle]
 pub extern "C" fn main() {
     unsafe {
@@ -62,7 +69,7 @@ pub extern "C" fn main() {
         kalloc::kinit1(&mut kalloc::end,
                        PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
     }
-    unsafe { kalloc::validate() };
+    logger::init().unwrap();
 
 
     println!("Initializing kernel paging");
@@ -73,10 +80,9 @@ pub extern "C" fn main() {
     picirq::picinit();
     println!("Setting up interrupt descriptor table");
     traps::trap_vector_init();
-    //timer::timerinit();
+    timer::timerinit();
     println!("Loading new interrupt descriptor table");
     traps::idtinit();
-
 
 
 
@@ -124,10 +130,89 @@ pub extern "C" fn main() {
         rtl8139::NIC = rtl8139::Rtl8139::init();
     }
 
-    println!("Launching scheduler...");
-    unsafe {
-        process::SCHEDULER = Some(process::Scheduler::new());
-        process::SCHEDULER.as_mut().unwrap().scheduler();
+    use collections::string::String;
+
+    let inum = fs.namex(b"/", b"small.html").unwrap();
+    let inode = fs.read_inode(fs::ROOT_DEV, inum);
+    let html = match inode {
+        Ok(i) => {
+            let mut buf = vec![0; i.size as usize];
+            fs.read(&i, &mut buf, 0).unwrap();
+            String::from_utf8(buf).unwrap().replace("${{VERSION}}", env!("CARGO_PKG_VERSION"))
+        }
+        Err(_) => panic!("Couldn't load HTML file"),
+    };
+
+    let header: String = "HTTP/1.1 200 OK\r\n\r\n".to_owned();
+    let http = header + html.as_str();
+
+    unsafe { irq::enable() };
+    loop {
+        use smoltcp::iface::{EthernetInterface, SliceArpCache, ArpCache};
+        use smoltcp::wire::{EthernetAddress, IpAddress};
+        use smoltcp::socket::{AsSocket, SocketSet};
+        use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+        use smoltcp::Error;
+        use alloc::boxed::Box;
+        use core::str;
+
+        let arp_cache = SliceArpCache::new(vec![Default::default(); 8]);
+        let hw_addr = unsafe { EthernetAddress(rtl8139::NIC.as_mut().unwrap().mac_address()) };
+
+        let protocol_addr = IpAddress::v4(10, 0, 0, 4);
+        let nic = unsafe { rtl8139::NIC.as_mut().unwrap() };
+        let mut iface = EthernetInterface::new(nic,
+                                               Box::new(arp_cache) as Box<ArpCache>,
+                                               hw_addr,
+                                               [protocol_addr]);
+
+        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 4096]);
+        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 4096]);
+        let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+
+        let mut sockets = SocketSet::new(vec![]);
+        let tcp_handle = sockets.add(tcp_socket);
+
+        loop {
+            {
+                let socket: &mut TcpSocket = sockets.get_mut(tcp_handle).as_socket();
+                if !socket.is_open() {
+                    socket.listen(80).unwrap();
+                }
+
+                if socket.can_recv() {
+                    let _ = socket.recv(200);
+                    if socket.can_send() {
+                        let seconds = unsafe { timer::TICKS } / 100;
+                        const SECONDS_PER_MINUTE: u32 = 60;
+                        const MINUTES_PER_HOUR: u32 = 60;
+                        const HOURS_PER_DAY: u32 = 24;
+                        const SECONDS_PER_DAY: u32 = (SECONDS_PER_MINUTE * MINUTES_PER_HOUR *
+                                                      HOURS_PER_DAY);
+                        const SECONDS_PER_HOUR: u32 = (SECONDS_PER_MINUTE * MINUTES_PER_HOUR);
+
+                        let days = seconds / SECONDS_PER_DAY;
+                        let hours = (seconds % SECONDS_PER_DAY) / SECONDS_PER_HOUR;
+                        let minutes = (seconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
+                        let seconds = seconds % SECONDS_PER_MINUTE;
+
+                        let time =
+                            format!("{} days, {}:{:02}:{:02}", days, hours, minutes, seconds);
+
+                        socket.send_slice(http.replace("${{TIME}}", &time).as_str().as_bytes())
+                            .unwrap();
+                        println!("socket closing");
+                        socket.close();
+                    }
+                }
+            }
+
+            match iface.poll(&mut sockets, 10) {
+                Ok(()) | Err(Error::Exhausted) => (),
+                Err(e) => println!("poll error: {}", e),
+            }
+        }
+
     }
 }
 
