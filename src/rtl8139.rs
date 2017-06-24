@@ -169,39 +169,6 @@ impl Rtl8139 {
               self.free_tx_buffers < NUM_TX_BUFFERS {
             self.free_tx_buffers += 1;
         }
-
-        /*
-        while !self.rx_empty() && isr.contains(RX_OK) {
-
-            /*
-            println!("Packet header: {:?}", self.get_rx_hdr());
-            println!("Length: {:#04x}", self.get_rx_len());
-            unsafe {
-                println!("CBA: {:#04x}", io::inw(self.iobase + CBA));
-            }
-            */
-
-            /*
-            let b = {
-                self.read().unwrap().to_vec()
-            };
-            use smoltcp::wire::{EthernetFrame, PrettyPrinter};
-            print!("{}", PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &b));
-            */
-
-            // Ensure that the new CAPR is dword aligned
-            self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
-            //println!("NEW CAPR: {:#04x}", self.rx_offset);
-
-            // set CAPR slightly below actual offset because cryptic manual told us to
-            let new_capr = self.rx_offset; // force copy to appease borrowck
-            self.set_capr(new_capr - 0x10);
-
-            if self.rx_offset >= BASE_BUF_SIZE {
-                self.rx_offset %= BASE_BUF_SIZE;
-            }
-        }
-    */
     }
 
     pub fn rx_empty(&self) -> bool {

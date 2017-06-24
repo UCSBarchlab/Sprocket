@@ -24,6 +24,7 @@ slice-cast = "0.1.2"
 smoltcp = { version = "0.3", default-features = false, features = ["collections", "alloc", "verbose", ], path="/home/dcoffill/smoltcp" }
 mem_utils = { path="lib/mem_utils" }
 kalloc = { path="lib/kalloc" }
+pci = { path="lib/pci" }
 log = { version = "0.3", default-features = false }
 
 
