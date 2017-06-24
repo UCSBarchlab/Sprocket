@@ -6,7 +6,6 @@
 #![feature(repr_simd)]
 #![feature(alloc)]
 #![feature(box_syntax)]
-#![feature(collections)]
 #![feature(drop_types_in_const)]
 
 #![allow(dead_code)]
@@ -14,9 +13,9 @@
 
 
 extern crate rlibc;
+#[macro_use]
 extern crate alloc;
 #[macro_use]
-extern crate collections;
 extern crate x86;
 extern crate slice_cast;
 extern crate smoltcp;
@@ -24,7 +23,6 @@ extern crate smoltcp;
 extern crate simple_fs as fs;
 extern crate mem_utils as mem;
 extern crate kalloc;
-#[allow(unused_imports)]
 #[macro_use]
 extern crate log;
 
@@ -56,7 +54,7 @@ mod logger;
 use mem::{PhysAddr, Address};
 pub use traps::trap;
 use x86::shared::irq;
-use collections::borrow::ToOwned;
+use alloc::borrow::ToOwned;
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -130,7 +128,7 @@ pub extern "C" fn main() {
         rtl8139::NIC = rtl8139::Rtl8139::init();
     }
 
-    use collections::string::String;
+    use alloc::string::String;
 
     let inum = fs.namex(b"/", b"small.html").unwrap();
     let inode = fs.read_inode(fs::ROOT_DEV, inum);

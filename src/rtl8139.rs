@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use mem::{VirtAddr, Address};
 use smoltcp::Error;
 use smoltcp::phy::Device;
-use collections::Vec;
+use alloc::Vec;
 
 const CONFIG_REG1: u16 = 0x52;
 const CMD_REG: u16 = 0x37;

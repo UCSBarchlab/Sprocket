@@ -8,7 +8,7 @@ use core;
 use alloc::boxed::Box;
 use vm;
 use traps;
-use collections::linked_list::LinkedList;
+use alloc::linked_list::LinkedList;
 use fs;
 use mem;
 

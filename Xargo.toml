@@ -1,2 +1,3 @@
 [target.i686-cofflos.dependencies]
 collections = {}
+alloc = {}
