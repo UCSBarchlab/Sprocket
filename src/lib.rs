@@ -15,16 +15,16 @@
 extern crate rlibc;
 #[macro_use]
 extern crate alloc;
-#[macro_use]
 extern crate x86;
 extern crate slice_cast;
 extern crate smoltcp;
+#[macro_use]
+extern crate log;
 
+extern crate pci;
 extern crate simple_fs as fs;
 extern crate mem_utils as mem;
 extern crate kalloc;
-#[macro_use]
-extern crate log;
 
 #[macro_use]
 extern crate bitflags;
@@ -47,7 +47,6 @@ mod uart;
 mod timer;
 //mod sleeplock;
 mod ide;
-mod pci;
 mod rtl8139;
 mod logger;
 

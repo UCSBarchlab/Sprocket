@@ -1,0 +1,9 @@
+[package]
+name = "pci"
+version = "0.1.0"
+authors = ["David Coffill <decoffill@gmail.com>"]
+
+[dependencies]
+x86 = "0.8"
+bitflags = "0.9"
+log = { version = "0.3", default-features = false  }
