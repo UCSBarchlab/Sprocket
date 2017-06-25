@@ -36,8 +36,6 @@ mod console;
 mod process;
 
 
-
-mod flags;
 mod vm;
 mod traps;
 mod mmu;
@@ -45,7 +43,6 @@ mod file;
 mod picirq;
 mod uart;
 mod timer;
-//mod sleeplock;
 mod ide;
 mod rtl8139;
 mod logger;
