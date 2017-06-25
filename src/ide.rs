@@ -1,9 +1,10 @@
 use x86::shared::io;
 use fs;
 use slice_cast;
+use core::cell::Cell;
 
 pub struct Ide {
-    busy: bool,
+    busy: Cell<bool>,
 }
 
 pub const SECTOR_SIZE: usize = 512;
@@ -20,12 +21,8 @@ impl fs::Disk for Ide {
     fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, fs::DiskError> {
         self.write(buffer, device, sector)
     }
-    fn read(&mut self,
-            mut buffer: &mut [u8],
-            device: u32,
-            sector: u32)
-            -> Result<(), fs::DiskError> {
-        self.read(&mut buffer, device, sector)
+    fn read(&self, mut buffer: &mut [u8], device: u32, sector: u32) -> Result<(), fs::DiskError> {
+        Ide::read(&self, &mut buffer, device, sector)
     }
 
     fn sector_size() -> usize {
@@ -35,7 +32,7 @@ impl fs::Disk for Ide {
 
 impl Ide {
     pub fn init() -> Ide {
-        Ide { busy: false }
+        Ide { busy: Cell::new(false) }
     }
 
     // we pass a buffer that's larger than 512:
@@ -48,7 +45,7 @@ impl Ide {
                  sector: u32)
                  -> Result<usize, fs::DiskError> {
         //until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
-        self.busy = true; // "lock" it
+        self.busy.set(true); // "lock" it
         // should probably create some kind of sleep lock instead, and populate it with this
         // possibly playing with fire due to aliasing rules, modifying mutable state that we "own"
         let _ = self.wait();
@@ -91,13 +88,9 @@ impl Ide {
 
     // TODO: figure out a better way to indicate success/error?
     // i.e. Result<&mut [u8; SECTOR_SIZE], ()>
-    pub fn read(&mut self,
-                buffer: &mut [u8],
-                device: u32,
-                sector: u32)
-                -> Result<(), fs::DiskError> {
+    pub fn read(&self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), fs::DiskError> {
         //until!(!self.busy, process::Channel::UseDisk); // sleep until it's no longer busy
-        self.busy = true; // "lock" it
+        self.busy.set(true); // "lock" it
         // should probably create some kind of sleep lock instead, and populate it with this
         // possibly playing with fire due to aliasing rules, modifying mutable state that we "own"
         self.wait()?;
@@ -152,7 +145,7 @@ impl Ide {
     }
 
     // poll the IDE device until it's ready
-    fn wait(&mut self) -> Result<(), fs::DiskError> {
+    fn wait(&self) -> Result<(), fs::DiskError> {
         let mut r: u8;
         while {
             r = unsafe { io::inb(0x1f7) };

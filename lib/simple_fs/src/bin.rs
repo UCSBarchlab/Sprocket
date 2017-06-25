@@ -4,6 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::env;
+use std::cell::RefCell;
 
 // size in blocks
 const FS_SIZE: u32 = 1000;
@@ -134,36 +135,40 @@ fn mkfs<T>(fs: &mut fs::FileSystem<T>) -> Result<(), fs::FsError>
 }
 
 struct DiskFile {
-    file: File,
+    file: RefCell<File>,
 }
 
 impl DiskFile {
     fn new(path: std::string::String) -> DiskFile {
         DiskFile {
-            file: OpenOptions::new()
+            file: RefCell::new(OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .open(path)
-                .expect("Could not create file"),
+                .expect("Could not create file")),
         }
     }
 }
 
 impl fs::Disk for DiskFile {
-    fn read(&mut self, mut buffer: &mut [u8], _: u32, sector: u32) -> Result<(), fs::DiskError> {
+    fn read(&self, mut buffer: &mut [u8], _: u32, sector: u32) -> Result<(), fs::DiskError> {
         // seek to the sector
         assert!(buffer.len() <= 512);
-        let _ = self.file.seek(SeekFrom::Start((sector as u64) * (Self::sector_size()) as u64));
-        let _ = self.file.read_exact(&mut buffer);
+        let _ = self.file
+            .borrow_mut()
+            .seek(SeekFrom::Start((sector as u64) * (Self::sector_size()) as u64));
+        let _ = self.file.borrow_mut().read_exact(&mut buffer);
         Ok(())
     }
 
     fn write(&mut self, buffer: &[u8], _: u32, sector: u32) -> Result<usize, fs::DiskError> {
         assert!(buffer.len() <= 512, "length was {}", buffer.len());
-        let _ = self.file.seek(SeekFrom::Start((sector as u64) * (Self::sector_size()) as u64));
-        let written = self.file.write_all(buffer);
-        self.file.flush().unwrap();
+        let _ = self.file
+            .borrow_mut()
+            .seek(SeekFrom::Start((sector as u64) * (Self::sector_size()) as u64));
+        let written = self.file.borrow_mut().write_all(buffer);
+        self.file.borrow_mut().flush().unwrap();
         if written.is_ok() {
             Ok(buffer.len())
         } else {

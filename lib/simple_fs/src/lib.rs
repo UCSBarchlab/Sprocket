@@ -44,7 +44,7 @@ macro_rules! IBLOCK {
 
 
 pub trait Disk {
-    fn read(&mut self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), DiskError>;
+    fn read(&self, buffer: &mut [u8], device: u32, sector: u32) -> Result<(), DiskError>;
     fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, DiskError>;
     fn sector_size() -> usize;
 }
@@ -99,7 +99,7 @@ impl<T> FileSystem<T>
         Err(FsError::ExhaustedInodes)
     }
 
-    pub fn read_inode(&mut self, device: u32, inum: u32) -> Result<Inode, FsError> {
+    pub fn read_inode(&self, device: u32, inum: u32) -> Result<Inode, FsError> {
 
         assert!(inum <= NUM_INODES);
         // read superblock to get list start
@@ -370,7 +370,7 @@ impl<T> FileSystem<T>
     }
 
     /// Maps sequential block of file into a disk block address if mapped
-    fn bmap(&mut self, inode: &Inode, blockno: u32) -> Result<u32, FsError> {
+    fn bmap(&self, inode: &Inode, blockno: u32) -> Result<u32, FsError> {
         let addr = inode.blocks[blockno as usize];
         if addr == UNUSED_BLOCKADDR {
             Err(FsError::BlockNotMapped(blockno))
@@ -379,7 +379,7 @@ impl<T> FileSystem<T>
         }
     }
 
-    pub fn read(&mut self,
+    pub fn read(&self,
                 inode: &Inode,
                 dst_buf: &mut [u8],
                 mut offset: u32)
