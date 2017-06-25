@@ -327,7 +327,7 @@ impl<T> FileSystem<T>
         Ok(())
     }
 
-    pub fn dir_lookup(&mut self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), FsError> {
+    pub fn dir_lookup(&self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), FsError> {
         assert!(dir.type_ == InodeType::Directory, "{:?}", dir.type_);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
         for offset in (0..dir.size).step_by(dirent_size as u32) {
@@ -503,7 +503,7 @@ impl<T> FileSystem<T>
     }
 
     // return inum of the target file
-    pub fn namex(&mut self, path: &[u8], name: &[u8]) -> Result<u32, FsError> {
+    pub fn namex(&self, path: &[u8], name: &[u8]) -> Result<u32, FsError> {
         let inode: Inode = if path == b"/" {
             self.read_inode(ROOT_DEV, ROOT_INUM)?
         } else {

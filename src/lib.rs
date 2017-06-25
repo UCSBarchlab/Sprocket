@@ -41,7 +41,7 @@ mod flags;
 mod vm;
 mod traps;
 mod mmu;
-//mod file;
+mod file;
 mod picirq;
 mod uart;
 mod timer;
@@ -98,6 +98,7 @@ pub extern "C" fn main() {
 
     info!("COFFLOS initialization complete, jumping to user code");
     service::UserService::start();
+    panic!("User application ended");
 }
 
 

@@ -1,7 +1,6 @@
 use rtl8139;
 use timer;
 use x86::shared::irq;
-use fs;
 use ide;
 use alloc::borrow::ToOwned;
 
@@ -18,48 +17,27 @@ impl Service for UserService {
     }
 
     fn start() {
-        println!("Reading root fs");
+        info!("Reading root fs");
 
-        let mut fs = fs::FileSystem { disk: ide::Ide::init() };
+        use file;
+        use file::{UnixFileSystem, FileHandle};
+        let fs = file::SimpleFs::new(ide::Ide::init());
+        let mut file = fs.open(b"/", b"README");
 
-        let inum = fs.namex(b"/", b"README").unwrap();
-        let inode = fs.read_inode(fs::ROOT_DEV, inum);
-        match inode {
-            Ok(i) => {
-                println!("OK! Found 'README' at {}", inum);
-                println!("Size: {}", i.size);
-                println!("======================================================================");
-
-                let mut buf = [0; fs::BLOCKSIZE];
-                let mut off = 0;
-                while let Ok(n) = fs.read(&i, &mut buf, off) {
-                    let s = ::core::str::from_utf8(&buf[..n]);
-                    match s {
-                        Ok(s) => print!("{}", s),
-                        Err(e) => {
-                            println!("error, up to {}", e.valid_up_to());
-                            println!("at offset{}. Char is '{:x}'", off, buf[e.valid_up_to()]);
-                        }
-                    }
-                    off += fs::BLOCKSIZE as u32;
-                }
-                println!("======================================================================");
-            }
-            Err(_) => println!("Something broke :("),
+        let mut buf = vec![0; file.size()];
+        file.read(&mut buf);
+        if let Ok(s) = ::core::str::from_utf8(&buf) {
+            info!("{}", s);
         }
+
 
         use alloc::string::String;
 
-        let inum = fs.namex(b"/", b"small.html").unwrap();
-        let inode = fs.read_inode(fs::ROOT_DEV, inum);
-        let html = match inode {
-            Ok(i) => {
-                let mut buf = vec![0; i.size as usize];
-                fs.read(&i, &mut buf, 0).unwrap();
-                String::from_utf8(buf).unwrap().replace("${{VERSION}}", env!("CARGO_PKG_VERSION"))
-            }
-            Err(_) => panic!("Couldn't load HTML file"),
-        };
+        let mut file = fs.open(b"/", b"small.html");
+        let mut buf = vec![0; file.size()];
+        file.read(&mut buf);
+        let html =
+            String::from_utf8(buf).unwrap().replace("${{VERSION}}", env!("CARGO_PKG_VERSION"));
 
         let header: String = "HTTP/1.1 200 OK\r\n\r\n".to_owned();
         let http = header + html.as_str();
@@ -119,7 +97,7 @@ impl Service for UserService {
 
                             socket.send_slice(http.replace("${{TIME}}", &time).as_str().as_bytes())
                                 .unwrap();
-                            println!("socket closing");
+                            info!("socket closing");
                             socket.close();
                         }
                     }
@@ -127,7 +105,7 @@ impl Service for UserService {
 
                 match iface.poll(&mut sockets, 10) {
                     Ok(()) | Err(Error::Exhausted) => (),
-                    Err(e) => println!("poll error: {}", e),
+                    Err(e) => warn!("poll error: {}", e),
                 }
             }
 
