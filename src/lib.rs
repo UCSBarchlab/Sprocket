@@ -48,7 +48,7 @@ mod rtl8139;
 mod logger;
 mod service;
 
-use mem::{PhysAddr, VirtAddr, Address};
+use mem::{PhysAddr, VirtAddr};
 pub use traps::trap;
 use x86::shared::irq;
 
@@ -60,33 +60,32 @@ pub extern "C" fn main() {
         console::CONSOLE2 = Some(console::Console::new());
     }
     logger::init().unwrap();
-    println!("COFFLOS OK!");
-    println!("Initializing allocator");
+    info!("COFFLOS OK!");
+    info!("Initializing allocator");
     unsafe {
         kalloc::init(VirtAddr::new(&mut kalloc::end as *const _ as usize),
                      PhysAddr(4 * 1024 * 1024).to_virt());
     }
 
 
-    println!("Initializing kernel paging");
+    info!("Initializing kernel paging");
     vm::kvmalloc();
-    println!("Initializing kernel segments");
+    info!("Initializing kernel segments");
     vm::seginit();
-    println!("Configuring PIC");
+    info!("Configuring PIC");
     picirq::picinit();
-    println!("Setting up interrupt descriptor table");
+    info!("Setting up interrupt descriptor table");
     traps::trap_vector_init();
     timer::timerinit();
-    println!("Loading new interrupt descriptor table");
+    info!("Loading new interrupt descriptor table");
     traps::idtinit();
 
-    println!("Finishing allocator initialization");
+    info!("Finishing allocator initialization");
     unsafe {
         kalloc::init(PhysAddr(4 * 1024 * 1024).to_virt(), mem::PHYSTOP.to_virt());
     }
 
-    //unsafe { kalloc::validate() };
-    println!("Enumerating PCI");
+    info!("Enumerating PCI");
     pci::enumerate();
     unsafe {
         rtl8139::NIC = rtl8139::Rtl8139::init();
@@ -102,10 +101,10 @@ pub extern "C" fn main() {
 #[lang = "panic_fmt"]
 #[no_mangle]
 pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
-    println!("Panic! An unrecoverable error occurred at {}:{}",
-             file,
-             line);
-    println!("{}", fmt);
+    error!("Panic! An unrecoverable error occurred at {}:{}",
+           file,
+           line);
+    error!("{}", fmt);
     unsafe {
         irq::disable();
         x86::shared::halt();

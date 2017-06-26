@@ -1,6 +1,5 @@
 use rtl8139;
 use timer;
-use x86::shared::irq;
 use ide;
 use alloc::borrow::ToOwned;
 
@@ -42,7 +41,6 @@ impl Service for UserService {
         let header: String = "HTTP/1.1 200 OK\r\n\r\n".to_owned();
         let http = header + html.as_str();
 
-        unsafe { irq::enable() };
         loop {
             use smoltcp::iface::{EthernetInterface, SliceArpCache, ArpCache};
             use smoltcp::wire::{EthernetAddress, IpAddress};
