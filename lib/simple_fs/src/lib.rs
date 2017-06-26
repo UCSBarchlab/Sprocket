@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(step_by)]
+#![feature(iterator_step_by)]
 #![allow(dead_code)]
 
 extern crate slice_cast;
@@ -290,7 +290,7 @@ impl<T> FileSystem<T>
         };
 
         // search the dir for a free slot in the existing dir file
-        for offset in (0..dir.size).step_by(dirent_size as u32) {
+        for offset in Iterator::step_by(0..dir.size, dirent_size) {
             let mut tmp_buf = [0; BLOCKSIZE];
             assert_eq!(self.read(dir, &mut tmp_buf[..dirent_size], offset)?,
                        dirent_size);
@@ -330,7 +330,7 @@ impl<T> FileSystem<T>
     pub fn dir_lookup(&self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), FsError> {
         assert!(dir.type_ == InodeType::Directory, "{:?}", dir.type_);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
-        for offset in (0..dir.size).step_by(dirent_size as u32) {
+        for offset in Iterator::step_by(0..dir.size, dirent_size) {
             let mut buf = [0; BLOCKSIZE];
             self.read(dir, &mut buf[..dirent_size], offset)?;
             // read this as a directory entry
