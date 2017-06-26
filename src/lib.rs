@@ -48,7 +48,7 @@ mod rtl8139;
 mod logger;
 mod service;
 
-use mem::{PhysAddr, Address};
+use mem::{PhysAddr, VirtAddr, Address};
 pub use traps::trap;
 use x86::shared::irq;
 
@@ -59,13 +59,13 @@ pub extern "C" fn main() {
     unsafe {
         console::CONSOLE2 = Some(console::Console::new());
     }
+    logger::init().unwrap();
     println!("COFFLOS OK!");
     println!("Initializing allocator");
     unsafe {
-        kalloc::kinit1(&mut kalloc::end,
-                       PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8);
+        kalloc::init(VirtAddr::new(&mut kalloc::end as *const _ as usize),
+                     PhysAddr(4 * 1024 * 1024).to_virt());
     }
-    logger::init().unwrap();
 
 
     println!("Initializing kernel paging");
@@ -82,8 +82,7 @@ pub extern "C" fn main() {
 
     println!("Finishing allocator initialization");
     unsafe {
-        kalloc::kinit2(PhysAddr(4 * 1024 * 1024).to_virt().addr() as *mut u8,
-                       mem::PHYSTOP.to_virt().addr() as *mut u8);
+        kalloc::init(PhysAddr(4 * 1024 * 1024).to_virt(), mem::PHYSTOP.to_virt());
     }
 
     //unsafe { kalloc::validate() };
@@ -94,6 +93,7 @@ pub extern "C" fn main() {
     }
 
     info!("COFFLOS initialization complete, jumping to user code");
+    unsafe { irq::enable() };
     service::UserService::start();
     panic!("User application ended");
 }

@@ -13,6 +13,10 @@ pub const PGSIZE: usize = 4096;
 pub const PDXSHIFT: usize = 22;
 pub const PTXSHIFT: usize = 12;
 
+extern "C" {
+    pub static mut end: u8;
+}
+
 /// A utility trait that implements common methods for `PhysAddr` and `VirtAddr`
 pub trait Address {
     fn new(usize) -> Self where Self: core::marker::Sized;
@@ -45,17 +49,17 @@ pub trait Address {
         if off > 0 {
             Self::new(self.addr() + (size * off as usize))
         } else {
-            Self::new(self.addr() - (size * off as usize))
+            Self::new(self.addr().wrapping_add(size * off as usize))
         }
     }
 }
 
 /// A convenience class to safely work with and manipulate physical addresses
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default)]
+#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default, Debug)]
 pub struct PhysAddr(pub usize);
 
 /// A convenience class to safely work with and manipulate virtual (paged) addresses
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default)]
+#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Default, Debug)]
 pub struct VirtAddr(pub usize);
 
 
@@ -109,6 +113,11 @@ impl VirtAddr {
         VirtAddr(addr)
     }
 
+    pub fn from_pageno(pageno: usize) -> VirtAddr {
+        let base = VirtAddr::new(unsafe { &end as *const _ as usize }).page_roundup();
+        VirtAddr::new(PGSIZE * pageno + base.addr())
+    }
+
     pub fn to_phys(&self) -> PhysAddr {
         PhysAddr::new(self.0 - KERNBASE.addr())
     }
@@ -119,5 +128,10 @@ impl VirtAddr {
 
     pub fn page_table_index(&self) -> usize {
         (self.addr() >> PTXSHIFT) & 0x3FF
+    }
+
+    pub fn pageno(&self) -> usize {
+        let new = self.page_roundup();
+        (new - VirtAddr::new(unsafe { &end as *const _ as usize }).page_roundup()) / PGSIZE
     }
 }

@@ -26,39 +26,15 @@ pub static mut KMEM: Kmem = Kmem {
     len: 0,
 };
 
-
-// TODO: perhaps make a PhysAddr and a VirtAddr to ensure that
-// nobody ever tries to convert a PhysAddr to a PhysAddr, etc.
-
-
-
-// So this is exactly what XV6 does, although it scares the hell out of me
-pub unsafe fn page_roundup(addr: *const u8) -> *const u8 {
-    (addr.offset((PGSIZE - 1) as isize) as usize & !(PGSIZE - 1)) as *const u8
-}
-//
-// So this is exactly what XV6 does, although it scares the hell out of me
-pub unsafe fn page_roundup_mut(addr: *mut u8) -> *mut u8 {
-    (addr.offset((PGSIZE - 1) as isize) as usize & !(PGSIZE - 1)) as *mut u8
-}
-
-pub unsafe fn kinit1(vstart: *mut u8, vend: *mut u8) {
+pub unsafe fn init(vstart: VirtAddr, vend: VirtAddr) {
     free_range(vstart, vend);
 }
 
-pub unsafe fn kinit2(vstart: *mut u8, vend: *mut u8) {
-    free_range(vstart, vend);
-}
-
-unsafe fn free_range(vstart: *mut u8, vend: *mut u8) {
+unsafe fn free_range(vstart: VirtAddr, vend: VirtAddr) {
     assert!(vstart < vend);
-    let mut p = page_roundup_mut(vend).offset(-(PGSIZE as isize));
-    //println!("end: {:#?}", p);
-    while p >= vstart {
-        kfree(p);
-        p = p.offset(-(PGSIZE as isize));
+    for page in vstart.pageno()..vend.pageno() {
+        kfree(VirtAddr::from_pageno(page));
     }
-    //println!("start: {:#?}", p.offset((PGSIZE as isize)));
 }
 
 pub unsafe fn validate() {
@@ -84,16 +60,15 @@ pub unsafe fn validate() {
 }
 
 
-fn kfree(addr: *mut u8) {
-    let v = VirtAddr(addr as usize);
+fn kfree(addr: VirtAddr) {
     let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
-    if !v.is_page_aligned() || v < kernel_start || v.to_phys() > PHYSTOP {
+    if !addr.is_page_aligned() || addr < kernel_start || addr.to_phys() > PHYSTOP {
         panic!("kfree");
     }
 
     unsafe {
         KMEM.len += 1;
-        let freed = addr as *mut Run;
+        let freed = addr.addr() as *mut Run;
 
         // Freelist contains at least one element
         if let Some(ref mut h) = KMEM.freelist {
@@ -215,7 +190,7 @@ pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, _align: usize) {
     let num_pages = (PGSIZE + size - 1) / PGSIZE;
     for off in 0..num_pages {
         unsafe {
-            kfree(ptr.offset((off * PGSIZE) as isize));
+            kfree(VirtAddr::new(ptr.offset((off * PGSIZE) as isize) as usize));
         }
     }
 }
@@ -237,7 +212,7 @@ pub extern "C" fn __rust_reallocate(ptr: *mut u8,
 
     for off in 0..num_old_pages {
         unsafe {
-            kfree(ptr.offset((off * PGSIZE) as isize));
+            kfree(VirtAddr::new(ptr.offset((off * PGSIZE) as isize) as usize));
         }
     }
 
