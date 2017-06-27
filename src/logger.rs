@@ -51,6 +51,6 @@ pub fn init() -> Result<(), SetLoggerError> {
     }
 }
 pub fn shutdown() -> Result<(), ShutdownLoggerError> {
-    log::shutdown_logger_raw()
-        .map(|logger| { let logger = unsafe { &*(logger as *const SimpleLogger) }; })
+    // if our logger had buffering, this is where we'd flush everything
+    Ok(())
 }

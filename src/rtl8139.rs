@@ -339,7 +339,7 @@ impl Device for Rtl8139 {
     fn receive(&mut self) -> Result<Self::RxBuffer, Error> {
         unsafe {
             if let Some(ref mut n) = NIC {
-                if let Some(ref b) = n.read() {
+                if let Some(b) = n.read() {
                     let rx = EthernetRxBuffer(b);
                     return Ok(rx);
                 }

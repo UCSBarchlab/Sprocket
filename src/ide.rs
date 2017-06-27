@@ -22,7 +22,7 @@ impl fs::Disk for Ide {
         self.write(buffer, device, sector)
     }
     fn read(&self, mut buffer: &mut [u8], device: u32, sector: u32) -> Result<(), fs::DiskError> {
-        Ide::read(&self, &mut buffer, device, sector)
+        Ide::read(self, &mut buffer, device, sector)
     }
 
     fn sector_size() -> usize {
@@ -136,7 +136,14 @@ impl Ide {
     // boilerplate for making an ide read/write request
     unsafe fn ide_cmd(device: u32, sector: u32) {
         //io::outb(0x3f6, 0); // generate interrupt
+
+        // This only works if the sector size == blocksize == 512, since a different command must
+        // be issued for multiple-sector read
+
+        #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
         io::outb(0x1f2, (fs::BLOCKSIZE / SECTOR_SIZE) as u8);
+        assert_eq!(fs::BLOCKSIZE, SECTOR_SIZE);
+
         io::outb(0x1f3, sector as u8 & 0xff);
         io::outb(0x1f4, (sector >> 8) as u8 & 0xff);
         io::outb(0x1f5, (sector >> 16) as u8 & 0xff);

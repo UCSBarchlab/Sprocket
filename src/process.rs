@@ -8,7 +8,7 @@ use core;
 use alloc::boxed::Box;
 use vm;
 use traps;
-use alloc::linked_list::LinkedList;
+use alloc::vec::Vec;
 use fs;
 use mem;
 
@@ -226,7 +226,7 @@ pub fn sleep() {
 }
 
 pub struct Scheduler {
-    ptable: LinkedList<Process>,
+    ptable: Vec<Process>,
     current: Option<Process>,
     scheduler_context: *const Context, // swtch() here to enter scheduler
     next_pid: u32,
@@ -235,7 +235,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn new() -> Scheduler {
         Scheduler {
-            ptable: LinkedList::<Process>::new(),
+            ptable: Vec::<Process>::new(),
             current: None,
             scheduler_context: core::ptr::null(),
             next_pid: 1,
@@ -310,7 +310,7 @@ impl Scheduler {
                   &mut self.current.as_mut().unwrap().context as *mut _);
         }
         // put process back on the run queue
-        self.ptable.push_back(self.current.take().expect("Current process not found!"));
+        self.ptable.push(self.current.take().expect("Current process not found!"));
     }
 
     // sched
@@ -374,7 +374,7 @@ fn readeflags() -> u32 {
     unsafe {
         asm!("pushfl; popl $0" : "=r" (eflags) : : : "volatile");
     }
-    return eflags;
+    eflags
 }
 
 #[macro_export]
