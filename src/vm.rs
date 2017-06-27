@@ -14,14 +14,7 @@ extern "C" {
     static data: u8;
 }
 
-/// Struct to help define kernel mappings in each process's page table
-struct Kmap {
-    virt: VirtAddr,
-    p_start: PhysAddr,
-    p_end: PhysAddr,
-    perm: Entry,
-}
-
+pub static mut KPGDIR: VirtAddr = VirtAddr(0);
 
 lazy_static! {
     /// Table to define kernel mappings in each process page table
@@ -57,6 +50,15 @@ lazy_static! {
     };
 }
 
+/// Struct to help define kernel mappings in each process's page table
+struct Kmap {
+    virt: VirtAddr,
+    p_start: PhysAddr,
+    p_end: PhysAddr,
+    perm: Entry,
+}
+
+
 #[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
 #[repr(C)]
 /// A Page Directory Entry
@@ -79,13 +81,12 @@ bitflags! {
     }
 }
 
+
 impl Entry {
     fn address(&self) -> PhysAddr {
         PhysAddr::new((self.bits & !0xFFF) as usize)
     }
 }
-
-
 
 
 /// GDT segment descriptor indices
@@ -98,64 +99,6 @@ pub enum Segment {
     TSS = 5,
 }
 
-
-
-
-
-pub static mut KPGDIR: VirtAddr = VirtAddr(0);
-
-// Initialize a SegmentDescriptor in a manner compatible with xv6
-fn seg(base: usize,
-       limit: usize,
-       ty: descriptor::Flags,
-       ring: shared::PrivilegeLevel)
-       -> SegmentDescriptor {
-    SegmentDescriptor {
-        limit1: ((limit >> 12) & 0xffff) as u16, // should be >> 12
-        base1: (base & 0xffff) as u16,
-        base2: ((base >> 16) & 0xff) as u8,
-        base3: ((base >> 24) & 0xff) as u8,
-        access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT |
-                descriptor::FLAGS_TYPE_SEG | ty,
-        // should be limit >> 32
-        limit2_flags: seg::FLAGS_DB | seg::FLAGS_G | seg::Flags::from_limit2((limit >> 28) as u8),
-    }
-}
-
-/*
-fn seg(base: usize,
-       limit: usize,
-       ty: descriptor::Flags,
-       ring: shared::PrivilegeLevel)
-       -> SegmentDescriptor {
-    SegmentDescriptor {
-        limit1: (limit & 0xffff) as u16,
-        base1: base as u16,
-        base2: ((base & 0xff0000) >> 16) as u8,
-        base3: ((base & 0xff000000) >> 24) as u8,
-        access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT |
-                descriptor::FLAGS_TYPE_SEG | ty,
-        limit2_flags: seg::FLAGS_DB | seg::FLAGS_G |
-                      seg::Flags::from_limit2(((0xffffffff & 0xF0000) >> 16) as u8),
-    }
-}
-*/
-
-fn seg16(base: usize,
-         limit: usize,
-         ty: descriptor::Flags,
-         ring: shared::PrivilegeLevel)
-         -> SegmentDescriptor {
-
-    SegmentDescriptor {
-        limit1: (limit >> 12 & 0xffff) as u16,
-        base1: (base & 0xffff) as u16,
-        base2: ((base >> 16) & 0xff) as u8,
-        base3: (base >> 24) as u8,
-        access: descriptor::Flags::from_priv(ring) | descriptor::FLAGS_PRESENT | ty,
-        limit2_flags: seg::FLAGS_DB | seg::Flags::from_limit2((limit >> 16) as u8),
-    }
-}
 
 pub fn seginit() {
 
@@ -171,24 +114,27 @@ pub fn seginit() {
             cpu.gdt[Segment::Null as usize] = SegmentDescriptor::NULL;
             cpu.gdt[Segment::KCode as usize] = seg(0x00000000,
                                                    0xffffffff,
-                                                   descriptor::FLAGS_TYPE_CODE |
-                                                   descriptor::FLAGS_TYPE_SEG_C_READ,
+                                                   seg::Type::Code(seg::CODE_READ),
                                                    shared::PrivilegeLevel::Ring0);
             cpu.gdt[Segment::KData as usize] = seg(0x00000000,
                                                    0xffffffff,
-                                                   descriptor::FLAGS_TYPE_DATA |
-                                                   descriptor::FLAGS_TYPE_SEG_D_RW,
+                                                   seg::Type::Data(seg::DATA_WRITE),
                                                    shared::PrivilegeLevel::Ring0);
             cpu.gdt[Segment::UCode as usize] = seg(0x00000000,
                                                    0xffffffff,
-                                                   descriptor::FLAGS_TYPE_CODE |
-                                                   descriptor::FLAGS_TYPE_SEG_C_READ,
+                                                   seg::Type::Code(seg::CODE_READ),
                                                    shared::PrivilegeLevel::Ring3);
             cpu.gdt[Segment::UData as usize] = seg(0x00000000,
                                                    0xffffffff,
-                                                   descriptor::FLAGS_TYPE_DATA |
-                                                   descriptor::FLAGS_TYPE_SEG_D_RW,
+                                                   seg::Type::Data(seg::DATA_WRITE),
                                                    shared::PrivilegeLevel::Ring3);
+
+            /*
+            info!("Flags {:?}", cpu.gdt[1].limit2_flags);
+            info!("Flags 0x{:02x}", cpu.gdt[1].limit2_flags.bits());
+            info!("Flags 0x{:02x}", cpu.gdt[1].access.bits());
+            assert!(cpu.gdt[1].limit2_flags.contains(seg::FLAGS_G));
+            */
 
 
             let d = dtables::DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
