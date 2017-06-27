@@ -79,14 +79,14 @@ pub fn enumerate() {
             match vendor {
                 0x10ec => {
                     let dev_id = unsafe { config_read16(bus as u8, slot, 0, DEV_ID_OFFSET) };
-                    info!("    Found RTL-{:x} at {},{}", dev_id, bus, slot);
+                    debug!("Found RTL-{:x} at {},{}", dev_id, bus, slot);
                 }
                 INVALID_VENDOR => {}
                 v_id @ _ => {
-                    info!("    Found unknown device at {},{} with vendor ID {:x}",
-                          bus,
-                          slot,
-                          v_id)
+                    debug!("Found unknown device at {},{} with vendor ID {:x}",
+                           bus,
+                           slot,
+                           v_id)
                 }
             }
         }

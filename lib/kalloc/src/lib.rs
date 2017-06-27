@@ -43,9 +43,7 @@ pub unsafe fn validate() {
 
     while let Some(page) = p {
         count += 1;
-        //print!("{:#?}", page);
         if let Some(next) = (*page).next {
-            //println!("-> {:#?}", next);
             assert!(page < next);
             p = Some(next);
         } else {

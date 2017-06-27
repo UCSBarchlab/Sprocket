@@ -77,7 +77,6 @@ impl Rtl8139 {
 
             // Inform card about RX buffer
             let virt_addr = VirtAddr::new(&mut (rtl.rx_buffer[0]) as *mut u8 as usize);
-            println!("Buffer lives at {:#08x}", virt_addr.to_phys().addr());
             io::outl(rtl.iobase + RB_START_REG, virt_addr.to_phys().addr() as u32);
 
             // Inform card about TX buffers
@@ -125,7 +124,7 @@ impl Rtl8139 {
     }
 
     fn hw_transmit(&mut self, buf: &[u8]) {
-        println!("TX START");
+        debug!("starting tx");
         let size = buf.len();
         //assert!(size >= 60); // min Ethernet frame size
         let offset = self.tx_offset;
@@ -161,8 +160,8 @@ impl Rtl8139 {
     }
 
     pub fn interrupt(&mut self) {
-        //let isr = self.get_isr();
-        //println!("{:?}", isr);
+        let isr = self.get_isr();
+        trace!("NIC ISR: [{:?}]", isr);
         self.clear_isr();
 
         while self.tsd(self.tx_offset).contains(TOK | OWN) &&
@@ -177,10 +176,8 @@ impl Rtl8139 {
     }
 
     fn read(&mut self) -> Option<&[u8]> {
-        // TODO: perhaps better error handling to skip CAPR past defective packet
         if !self.rx_empty() && self.get_rx_hdr().contains(RX_OK_) {
             let len = self.get_rx_len() as usize;
-            //println!("len={}", len);
             Some(&self.rx_buffer[self.rx_offset + 4..self.rx_offset + 4 + len])
         } else {
             None
@@ -221,7 +218,6 @@ impl Rtl8139 {
     pub fn update_capr(&mut self) {
         // Ensure that the new CAPR is dword aligned
         self.rx_offset = (self.rx_offset + self.get_rx_len() + 4 + 3) & !3;
-        //println!("NEW CAPR: {:#04x}", self.rx_offset);
 
         // set CAPR slightly below actual offset because cryptic manual told us to
         let new_capr = self.rx_offset; // force copy to appease borrowck
@@ -399,9 +395,6 @@ impl AsRef<[u8]> for EthernetRxBuffer {
 impl Drop for EthernetRxBuffer {
     fn drop(&mut self) {
         unsafe {
-            //NIC.as_mut().unwrap().hw_transmit(self.0);
-            // update CAPR to point to next packet, no longer need this
-            //println!("packet is done!");
             if let Some(ref mut n) = NIC {
                 n.update_capr();
             }

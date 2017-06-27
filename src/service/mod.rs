@@ -32,7 +32,7 @@ impl Service for UserService {
 
         use alloc::string::String;
 
-        let mut file = fs.open(b"/", b"small.html");
+        let mut file = fs.open(b"/", b"index.html");
         let mut buf = vec![0; file.size()];
         file.read(&mut buf);
         let html =

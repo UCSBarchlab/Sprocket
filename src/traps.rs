@@ -111,7 +111,7 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
             }
         }
         Interrupt::NetworkInt => unsafe {
-            println!("Network Int!");
+            debug!("Network interrupt");
             if let Some(ref mut n) = rtl8139::NIC {
                 n.interrupt();
             }
@@ -121,10 +121,9 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
         },
         Interrupt::PageFault => {
 
-            println!("Page fault occured at {:#08x}",
-                     unsafe { control_regs::cr2() });
-            panic!();
+            panic!("Page fault occured at {:#08x}",
+                   unsafe { control_regs::cr2() });
         }
-        t => println!("Recieved {} ({:#x})", t, t as u8),
+        t => debug!("Recieved {} ({:#x})", t, t as u8),
     }
 }
