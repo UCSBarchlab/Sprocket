@@ -4,7 +4,6 @@ use process;
 use x86::shared::segmentation::SegmentDescriptor;
 use x86::shared::segmentation as seg;
 use x86::shared::dtables;
-use x86::shared::descriptor;
 use x86::shared;
 use mmu;
 use mem::{PhysAddr, VirtAddr, Address, PGSIZE, KERNBASE, KERNLINK, PHYSTOP, DEVSPACE, EXTMEM};
@@ -112,22 +111,30 @@ pub fn seginit() {
 
         if let Some(ref mut cpu) = process::CPU {
             cpu.gdt[Segment::Null as usize] = SegmentDescriptor::NULL;
-            cpu.gdt[Segment::KCode as usize] = seg(0x00000000,
-                                                   0xffffffff,
-                                                   seg::Type::Code(seg::CODE_READ),
-                                                   shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::KData as usize] = seg(0x00000000,
-                                                   0xffffffff,
-                                                   seg::Type::Data(seg::DATA_WRITE),
-                                                   shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::UCode as usize] = seg(0x00000000,
-                                                   0xffffffff,
-                                                   seg::Type::Code(seg::CODE_READ),
-                                                   shared::PrivilegeLevel::Ring3);
-            cpu.gdt[Segment::UData as usize] = seg(0x00000000,
-                                                   0xffffffff,
-                                                   seg::Type::Data(seg::DATA_WRITE),
-                                                   shared::PrivilegeLevel::Ring3);
+            cpu.gdt[Segment::KCode as usize] =
+                SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       shared::PrivilegeLevel::Ring0);
+            cpu.gdt[Segment::KData as usize] =
+                SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       shared::PrivilegeLevel::Ring0);
+            cpu.gdt[Segment::UCode as usize] =
+                SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       shared::PrivilegeLevel::Ring3);
+            cpu.gdt[Segment::UData as usize] =
+                SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       shared::PrivilegeLevel::Ring3);
 
             /*
             info!("Flags {:?}", cpu.gdt[1].limit2_flags);
