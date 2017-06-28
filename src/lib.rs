@@ -108,14 +108,17 @@ pub extern "C" fn main() {
 #[lang = "panic_fmt"]
 #[no_mangle]
 pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
+    unsafe {
+        irq::disable();
+    }
+    unsafe { console::CONSOLE.force_unlock() }
+    unsafe { spinlock::LOCK_COUNT.store(0, core::sync::atomic::Ordering::SeqCst) }
+    unsafe { traps::INT_ENABLED.store(false, core::sync::atomic::Ordering::SeqCst) }
     error!("Panic! An unrecoverable error occurred at {}:{}",
            file,
            line);
     error!("{}", fmt);
-    unsafe {
-        irq::disable();
-        x86::shared::halt();
-    }
+    logger::shutdown().unwrap();
     loop {}
 }
 

@@ -8,7 +8,7 @@ use x86::shared::flags;
 
 // NB This should be a per CPU variable.  Not that it matters much for a
 // uniprocessor system, but if that were to change then this needs updating
-static mut LOCK_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+pub static mut LOCK_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
 
 /// A wrapper class for `spin::Mutex` that enables and disables interrupts as needed
 pub struct Mutex<T: ?Sized> {
@@ -23,13 +23,7 @@ unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 
 impl<T> Mutex<T> {
-    #[cfg(feature = "const_fn")]
     pub const fn new(user_data: T) -> Mutex<T> {
-        Mutex { lock: Mutex::new(user_data) }
-    }
-
-    #[cfg(not(feature = "const_fn"))]
-    pub fn new(user_data: T) -> Mutex<T> {
         Mutex { lock: spin::Mutex::new(user_data) }
     }
 
@@ -47,6 +41,10 @@ impl<T> Mutex<T> {
         }
         let g = self.lock.lock();
         MutexGuard { guard: Some(g) }
+    }
+
+    pub unsafe fn force_unlock(&self) {
+        self.lock.force_unlock()
     }
 }
 
@@ -70,7 +68,6 @@ impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
         drop(g);
         atomic::fence(atomic::Ordering::SeqCst);
         unsafe {
-            use console;
             LOCK_COUNT.fetch_sub(1, atomic::Ordering::SeqCst);
             // if we *can* enable interrupts, based on total number of outstanding locks
             if LOCK_COUNT.load(atomic::Ordering::SeqCst) == 0 {

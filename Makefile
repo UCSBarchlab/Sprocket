@@ -81,7 +81,7 @@ fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README index.html
 mkfs: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs
 	cargo build --target $(host_target) --manifest-path lib/simple_fs/Cargo.toml
 
-entry.o: src/entry.S
+entry.o: src/entry.S src/param.h
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o entry.o src/entry.S
 
 vectors.o: src/vectors.S
@@ -100,7 +100,7 @@ kernel: cargo $(rust_os) entry.o kernel.ld initcode vectors.o trapasm.o swtch.o
 -include *.d
 
 cargo:
-	xargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse
+	xargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse -C opt-level=s
 
 clean:
 	rm -rf *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
