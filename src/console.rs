@@ -1,20 +1,16 @@
-use uart;
-
 use core::fmt;
+
+use spinlock;
+use uart;
 
 const BACKSPACE: u8 = 0x08;
 const ASCII_BACKSPACE: u8 = 0x7f;
-
-// Ensure that console is only initialized once
-//static CONSOLE: spin::Once<Console> = spin::Once::new();
-
-pub static mut CONSOLE2: Option<Console> = None;
-//lazy_static! {
-//pub static ref CONSOLE: spin::Mutex<Console> = spin::Mutex::new(Console::new());
-//}
-
-
 const INPUT_BUF: usize = 128;
+
+
+lazy_static! {
+    pub static ref CONSOLE: spinlock::Mutex<Console> = spinlock::Mutex::new(Console::new());
+}
 
 struct Input {
     buf: [u8; INPUT_BUF],
@@ -75,7 +71,7 @@ macro_rules! println {
 
 pub fn print(args: fmt::Arguments) {
     use core::fmt::Write;
-    unsafe { CONSOLE2.as_mut().unwrap().write_fmt(args).unwrap() };
+    CONSOLE.lock().write_fmt(args).unwrap();
 }
 
 #[macro_export]

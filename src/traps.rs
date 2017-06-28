@@ -8,6 +8,8 @@ use process;
 use timer;
 use rtl8139;
 
+use core::sync::atomic;
+
 // x86 trap and interrupt constants.
 
 // Processor-defined:
@@ -17,6 +19,8 @@ pub const COM1_IRQ: u8 = 4; // IRQ 0 corresponds to int T_IRQ
 pub const NIC_IRQ: u8 = 0xb; // IRQ 0 corresponds to int T_IRQ
 
 pub const FLAG_INT_ENABLED: u32 = 0x200;
+
+pub static mut INT_ENABLED: atomic::AtomicBool = atomic::AtomicBool::new(false);
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -104,7 +108,7 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
             // print keyboard input for debugging
             use console;
             let ch = {
-                unsafe { console::CONSOLE2.as_mut().unwrap().read_byte() }
+                console::CONSOLE.lock().read_byte()
             };
             if let Some(c) = ch {
                 print!("{}", c as char);

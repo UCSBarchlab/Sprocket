@@ -24,6 +24,7 @@ extern crate log;
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
+extern crate spin;
 
 extern crate pci;
 extern crate simple_fs as fs;
@@ -46,6 +47,7 @@ mod ide;
 mod rtl8139;
 mod logger;
 mod service;
+mod spinlock;
 
 use mem::{PhysAddr, VirtAddr};
 pub use traps::trap;
@@ -58,10 +60,6 @@ const LOGO: &'static str = concat!(" █▀▀ █▀█ █▀▀ █▀▀ █
                                    " ▀▀▀ ▀▀▀ ▀   ▀   ▀▀▀ ▀▀▀ ▀▀▀ ▀   ▀▀▀");
 #[no_mangle]
 pub extern "C" fn main() {
-    unsafe {
-        console::CONSOLE2 = Some(console::Console::new());
-    }
-
     println!("");
     for i in [196, 202, 214, 34, 51, 57].iter() {
         println!("[38;5;{}m{}", i, LOGO);
