@@ -20,6 +20,10 @@ extern crate slice_cast;
 extern crate smoltcp;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
 
 extern crate pci;
 extern crate simple_fs as fs;
@@ -27,14 +31,9 @@ extern crate mem_utils as mem;
 extern crate kalloc;
 
 #[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
 mod console;
 #[macro_use]
 mod process;
-
 
 mod vm;
 mod traps;
@@ -51,21 +50,30 @@ mod service;
 use mem::{PhysAddr, VirtAddr};
 pub use traps::trap;
 use x86::shared::irq;
-
 use service::Service;
 
+
+const LOGO: &'static str = concat!(" █▀▀ █▀█ █▀▀ █▀▀ █   █▀█ █▀▀   █ ▀▀▄\n",
+                                   " █   █ █ █▀▀ █▀▀ █   █ █ ▀▀█ ▄▀  ▄▀\n",
+                                   " ▀▀▀ ▀▀▀ ▀   ▀   ▀▀▀ ▀▀▀ ▀▀▀ ▀   ▀▀▀");
 #[no_mangle]
 pub extern "C" fn main() {
     unsafe {
         console::CONSOLE2 = Some(console::Console::new());
     }
+
+    println!("");
+    for i in [196, 202, 214, 34, 51, 57].iter() {
+        println!("[38;5;{}m{}", i, LOGO);
+    }
+
     logger::init().unwrap();
-    info!("COFFLOS OK!");
     info!("Initializing allocator");
     unsafe {
         kalloc::init(VirtAddr::new(&mut kalloc::end as *const _ as usize),
                      PhysAddr(4 * 1024 * 1024).to_virt());
     }
+
 
 
     info!("Initializing kernel paging");
@@ -90,6 +98,7 @@ pub extern "C" fn main() {
     unsafe {
         rtl8139::NIC = rtl8139::Rtl8139::init();
     }
+
 
     info!("COFFLOS initialization complete, jumping to user code");
     unsafe { irq::enable() };

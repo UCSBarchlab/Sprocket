@@ -29,13 +29,16 @@ impl Log for SimpleLogger {
                 LogLevel::Debug => ('D', CYAN),
                 LogLevel::Trace => ('T', WHITE),
             };
-            println!("{}{}{} {} {} {}",
-                     ESC,
-                     color_code,
-                     TEXT,
-                     letter,
-                     RESET,
-                     record.args());
+
+            let loc = record.location().module_path();
+
+            print!("{}{}{} {} {}", ESC, color_code, TEXT, letter, RESET);
+            let idx = match loc.rfind("::") {
+                Some(i) => i + 2,
+                None => 0,
+            };
+            print!(" {:<10} ", &loc[idx..]);
+            println!("{}", record.args());
         }
     }
 }
