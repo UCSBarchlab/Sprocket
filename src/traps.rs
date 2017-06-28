@@ -70,29 +70,25 @@ impl ::core::fmt::Display for Interrupt {
 }
 
 extern "C" {
-    static mut vectors: [u32; 256];
+    static vectors: [u32; 256];
 }
 
-use spinlock;
-pub static mut IDT: spinlock::Mutex<[IdtEntry; 256]> = spinlock::Mutex::new([IdtEntry::MISSING;
-                                                                             256]);
+use spinlock::Mutex;
+pub static IDT: Mutex<[IdtEntry; 256]> = Mutex::new([IdtEntry::MISSING; 256]);
 
 pub fn trap_vector_init() {
-    // Unsafe because we're accessing global mutable state
-    unsafe {
-        for (interrupt, vec) in IDT.lock().iter_mut().zip(vectors.iter_mut()) {
-            *interrupt = IdtEntry::new(VAddr::from_usize(*vec as usize),
-                                       (Segment::KCode as u16) << 3,
-                                       PrivilegeLevel::Ring0,
-                                       true);
-        }
-
-        IDT.lock()[Interrupt::Syscall as usize] =
-            IdtEntry::new(VAddr::from_usize(vectors[Interrupt::Syscall as usize] as usize),
-                          (Segment::KCode as u16) << 3,
-                          PrivilegeLevel::Ring3,
-                          true);
+    for (interrupt, vec) in IDT.lock().iter_mut().zip(unsafe { vectors.iter() }) {
+        *interrupt = IdtEntry::new(VAddr::from_usize(*vec as usize),
+                                   (Segment::KCode as u16) << 3,
+                                   PrivilegeLevel::Ring0,
+                                   true);
     }
+
+    IDT.lock()[Interrupt::Syscall as usize] =
+        IdtEntry::new(VAddr::from_usize(unsafe { vectors[Interrupt::Syscall as usize] } as usize),
+                      (Segment::KCode as u16) << 3,
+                      PrivilegeLevel::Ring3,
+                      true);
 }
 
 pub fn idtinit() {
