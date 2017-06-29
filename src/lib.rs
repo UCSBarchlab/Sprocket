@@ -49,7 +49,7 @@ mod logger;
 mod service;
 mod spinlock;
 
-use mem::{PhysAddr, VirtAddr};
+use mem::{PhysAddr, VirtAddr, Address};
 pub use traps::trap;
 use x86::shared::irq;
 use service::Service;
@@ -68,7 +68,7 @@ pub extern "C" fn main() {
     logger::init().unwrap();
     info!("Initializing allocator");
     unsafe {
-        kalloc::init(VirtAddr::new(&mut kalloc::end as *const _ as usize),
+        kalloc::init(VirtAddr::new(&kalloc::end as *const _ as usize + mem::PGSIZE).page_roundup(),
                      PhysAddr(4 * 1024 * 1024).to_virt());
     }
 
@@ -94,7 +94,7 @@ pub extern "C" fn main() {
     info!("Enumerating PCI");
     pci::enumerate();
     unsafe {
-        rtl8139::NIC = rtl8139::Rtl8139::init();
+        *rtl8139::NIC.lock() = rtl8139::Rtl8139::init();
     }
 
 

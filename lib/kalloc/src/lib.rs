@@ -7,7 +7,7 @@ extern crate mem_utils;
 use mem_utils::{VirtAddr, Address, PGSIZE, PHYSTOP};
 
 extern "C" {
-    pub static mut end: u8;
+    pub static end: u8;
 }
 
 pub struct Kmem {

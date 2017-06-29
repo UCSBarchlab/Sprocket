@@ -7,7 +7,6 @@ use vm::Segment;
 use process;
 use timer;
 use rtl8139;
-
 use core::sync::atomic;
 
 // x86 trap and interrupt constants.
@@ -112,12 +111,12 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
                 print!("{}", c as char);
             }
         }
-        Interrupt::NetworkInt => unsafe {
+        Interrupt::NetworkInt => {
             debug!("Network interrupt");
-            if let Some(ref mut n) = rtl8139::NIC {
+            if let Some(ref mut n) = rtl8139::NIC.lock().as_mut() {
                 n.interrupt();
             }
-        },
+        }
         Interrupt::TimerInt => unsafe {
             timer::TICKS += 1;
         },

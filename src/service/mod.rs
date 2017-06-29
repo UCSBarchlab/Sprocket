@@ -51,10 +51,11 @@ impl Service for UserService {
             use core::str;
 
             let arp_cache = SliceArpCache::new(vec![Default::default(); 8]);
-            let hw_addr = unsafe { EthernetAddress(rtl8139::NIC.as_mut().unwrap().mac_address()) };
+            let hw_addr = EthernetAddress(rtl8139::NIC.lock().as_ref().unwrap().mac_address());
 
             let protocol_addr = IpAddress::v4(10, 0, 0, 4);
-            let nic = unsafe { rtl8139::NIC.as_mut().unwrap() };
+            let nic = &mut rtl8139::NetworkCard {};
+
             let mut iface = EthernetInterface::new(nic,
                                                    Box::new(arp_cache) as Box<ArpCache>,
                                                    hw_addr,
@@ -106,8 +107,6 @@ impl Service for UserService {
                     Err(e) => warn!("poll error: {}", e),
                 }
             }
-
         }
-
     }
 }

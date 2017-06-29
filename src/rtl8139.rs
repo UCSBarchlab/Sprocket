@@ -43,7 +43,8 @@ pub struct Rtl8139 {
 // contiguously allocated and are page aligned.  That may not be the case for other allocators
 // though.  If you feel like messing with the kernel allocator, proceed with caution!
 
-pub static mut NIC: Option<Rtl8139> = None;
+use spinlock::Mutex;
+pub static NIC: Mutex<Option<Rtl8139>> = Mutex::new(None);
 
 impl Rtl8139 {
     pub unsafe fn init() -> Option<Rtl8139> {
@@ -107,7 +108,7 @@ impl Rtl8139 {
         }
     }
 
-    pub fn mac_address(&mut self) -> [u8; 6] {
+    pub fn mac_address(&self) -> [u8; 6] {
         let mut mac = [0; 6];
         for (off, byte) in mac.iter_mut().enumerate() {
             *byte = unsafe { io::inb(self.iobase + (off as u16)) };
@@ -332,29 +333,30 @@ impl TxStatusDesc {
     }
 }
 
-impl Device for Rtl8139 {
+pub struct NetworkCard;
+
+impl Device for NetworkCard {
     type RxBuffer = EthernetRxBuffer;
     type TxBuffer = EthernetTxBuffer;
 
     fn receive(&mut self) -> Result<Self::RxBuffer, Error> {
-        unsafe {
-            if let Some(ref mut n) = NIC {
-                if let Some(b) = n.read() {
-                    let rx = EthernetRxBuffer(b);
-                    return Ok(rx);
-                }
+        if let Some(ref mut n) = NIC.lock().as_mut() {
+            if let Some(b) = n.read() {
+                let rx = EthernetRxBuffer(b.to_vec());
+                return Ok(rx);
             }
         }
         Err(Error::Exhausted)
     }
 
     fn transmit(&mut self, _length: usize) -> Result<Self::TxBuffer, Error> {
-        if self.tx_available() {
-            self.free_tx_buffers -= 1;
-            Ok(EthernetTxBuffer(vec![0; _length]))
-        } else {
-            Err(Error::Exhausted)
+        if let Some(ref mut s) = NIC.lock().as_mut() {
+            if s.tx_available() {
+                s.free_tx_buffers -= 1;
+                return Ok(EthernetTxBuffer(vec![0; _length]));
+            }
         }
+        Err(Error::Exhausted)
     }
 
     fn mtu(&self) -> usize {
@@ -378,26 +380,22 @@ impl AsMut<[u8]> for EthernetTxBuffer {
 
 impl Drop for EthernetTxBuffer {
     fn drop(&mut self) {
-        unsafe {
-            NIC.as_mut().unwrap().hw_transmit(&self.0);
-        }
+        NIC.lock().as_mut().unwrap().hw_transmit(&self.0);
     }
 }
 
-pub struct EthernetRxBuffer(pub &'static [u8]);
+pub struct EthernetRxBuffer(pub Vec<u8>);
 
 impl AsRef<[u8]> for EthernetRxBuffer {
     fn as_ref(&self) -> &[u8] {
-        self.0
+        &self.0
     }
 }
 
 impl Drop for EthernetRxBuffer {
     fn drop(&mut self) {
-        unsafe {
-            if let Some(ref mut n) = NIC {
-                n.update_capr();
-            }
+        if let Some(ref mut n) = NIC.lock().as_mut() {
+            n.update_capr();
         }
     }
 }
