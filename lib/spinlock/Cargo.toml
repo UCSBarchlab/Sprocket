@@ -1,0 +1,8 @@
+[package]
+name = "spinlock"
+version = "0.1.0"
+authors = ["David Coffill <decoffill@gmail.com>"]
+
+[dependencies]
+spin = "0.4.0"
+x86 = { git = "https://github.com/dcoffill/rust-x86.git" }

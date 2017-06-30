@@ -5,3 +5,5 @@ authors = ["David Coffill <decoffill@gmail.com>"]
 
 [dependencies]
 mem_utils = { path="../mem_utils" }
+spinlock = { path = "../spinlock" }
+slice-cast = "0.1.2"

@@ -1,14 +1,15 @@
 #![no_std]
 #![feature(allocator)]
 #![allocator]
+#![feature(unique)]
+#![feature(const_fn)]
 
 extern crate mem_utils;
+extern crate spinlock;
 
 use mem_utils::{VirtAddr, Address, PGSIZE, PHYSTOP};
 
-extern "C" {
-    pub static end: u8;
-}
+pub mod kalloc2;
 
 pub struct Kmem {
     freelist: Option<*mut Run>,
@@ -59,7 +60,7 @@ pub unsafe fn validate() {
 
 
 fn kfree(addr: VirtAddr) {
-    let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
+    let kernel_start: VirtAddr = VirtAddr(unsafe { &mem_utils::end } as *const _ as usize);
     if !addr.is_page_aligned() || addr < kernel_start || addr.to_phys() > PHYSTOP {
         panic!("kfree");
     }
