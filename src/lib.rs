@@ -5,8 +5,7 @@
 #![feature(asm)]
 #![feature(repr_simd)]
 #![feature(alloc)]
-#![feature(box_syntax)]
-#![feature(drop_types_in_const)]
+#![feature(box_syntax)] #![feature(drop_types_in_const)]
 
 #![allow(dead_code)]
 #![cfg_attr(feature = "cargo-clippy", allow(empty_loop))]
@@ -30,6 +29,7 @@ extern crate pci;
 extern crate simple_fs as fs;
 extern crate mem_utils as mem;
 extern crate kalloc;
+extern crate spinlock;
 
 #[macro_use]
 mod console;
@@ -47,7 +47,6 @@ mod ide;
 mod rtl8139;
 mod logger;
 mod service;
-mod spinlock;
 
 use mem::{PhysAddr, VirtAddr, Address};
 pub use traps::trap;
@@ -68,9 +67,12 @@ pub extern "C" fn main() {
     logger::init().unwrap();
     info!("Initializing allocator");
     unsafe {
-        kalloc::init(VirtAddr::new(&kalloc::end as *const _ as usize + mem::PGSIZE).page_roundup(),
+        kalloc::init(VirtAddr::new(&mem::end as *const _ as usize + mem::PGSIZE).page_roundup(),
                      PhysAddr(4 * 1024 * 1024).to_virt());
     }
+
+    info!("Size of FreePageRange {}",
+          core::mem::size_of::<kalloc::kalloc2::FreePageRange>());
 
 
 
@@ -113,7 +115,7 @@ pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, lin
     }
     unsafe { console::CONSOLE.force_unlock() }
     unsafe { spinlock::LOCK_COUNT.store(0, core::sync::atomic::Ordering::SeqCst) }
-    unsafe { traps::INT_ENABLED.store(false, core::sync::atomic::Ordering::SeqCst) }
+    unsafe { spinlock::INT_ENABLED.store(false, core::sync::atomic::Ordering::SeqCst) }
     error!("Panic! An unrecoverable error occurred at {}:{}",
            file,
            line);

@@ -14,7 +14,7 @@ pub const PDXSHIFT: usize = 22;
 pub const PTXSHIFT: usize = 12;
 
 extern "C" {
-    pub static mut end: u8;
+    pub static end: u8;
 }
 
 /// A utility trait that implements common methods for `PhysAddr` and `VirtAddr`

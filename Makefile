@@ -100,7 +100,7 @@ kernel: cargo $(rust_os) entry.o kernel.ld initcode vectors.o trapasm.o swtch.o
 -include *.d
 
 cargo:
-	xargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse -C opt-level=s
+	xargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse
 
 clean:
 	rm -rf *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \

@@ -26,6 +26,7 @@ mem_utils = { path="lib/mem_utils" }
 kalloc = { path="lib/kalloc" }
 pci = { path="lib/pci" }
 log = { version = "0.3", default-features = false }
+spinlock = { path = "lib/spinlock" }
 
 
 [dependencies.lazy_static]
