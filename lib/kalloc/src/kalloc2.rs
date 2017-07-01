@@ -96,38 +96,66 @@ impl Allocator {
             // If the requested memory is the exact size of the range, plus the FreePageRange that
             // points to it
             if len + 1 == requested_pages {
-                // We're allocating our FreePageRange its entire &[FreePage], so we update the head
-                // to point past us
+                // update the freelist head to point to the next element (or None)
                 let next = self.freelist.as_mut().unwrap().next_range.take();
-                let mut old_head = ::core::mem::replace(&mut self.freelist, next);
+                let old_head = ::core::mem::replace(&mut self.freelist, next);
 
-                // Re-cast the link and it's adjacently allocated page range into a new allocation
-                // Invariant: it MUST be the case that the FreePageRange is contiguously
-                // allocated preceding the free pages themselves
-                let slice: &'static mut [u8] = unsafe {
-                    let allocation = *old_head.as_mut().unwrap() as *mut FreePageRange;
-                    let sl: &'static mut [FreePageRange] =
-                        slice::from_raw_parts_mut(allocation, requested_pages);
-                    slice_cast::cast_mut(sl)
-                };
+                let slice = Self::allocate_entire_range(old_head.unwrap());
                 return Ok(slice);
             } else if len >= requested_pages {
                 // allocate some subset of the range, or possibly the entire range,
-                // but leave the link intact other than updating its slice
-
-                // Take the list of free pages from the FreePageRange, divide it as needed, and
-                // replace the remainder back into the FreePageRange.  Return the allocated portion
-                let pages = ::core::mem::replace(&mut self.freelist.as_mut().unwrap().pages,
-                                                 &mut []);
-                let (remainder, allocation) = pages.split_at_mut(len - requested_pages);
-                self.freelist.as_mut().unwrap().pages = remainder;
-
-                let slice: &'static mut [u8] = unsafe { slice_cast::cast_mut(allocation) };
+                let slice = Self::allocate_from_range(size, self.freelist.as_mut().unwrap());
                 return Ok(slice);
             }
         } else {
             return Err("Unable to find a contiguous range");
         }
+
+        /*
+        let mut last = &mut self.freelist;
+        let mut next = &mut self.freelist.next_range;
+        while let Some(n) = next {}
+        */
+
+
         Err("Unable to find a contiguous range")
+    }
+
+    fn allocate_from_range(size: usize, range: &'static mut FreePageRange) -> &'static mut [u8] {
+        let requested_pages = Self::size_to_pages(size);
+        let len = range.pages.len();
+        assert!(len >= requested_pages);
+        // allocate some subset of the range, or possibly the entire range,
+        // but leave the FreePageRange intact other than updating its slice
+
+        // Take the list of free pages from the FreePageRange, divide it as needed, and
+        // replace the remainder back into the FreePageRange.  Return the allocated portion
+        let pages = ::core::mem::replace(&mut range.pages, &mut []);
+        let (remainder, allocation) = pages.split_at_mut(len - requested_pages);
+        range.pages = remainder;
+
+        let slice: &'static mut [u8] = unsafe { slice_cast::cast_mut(allocation) };
+        slice
+    }
+
+    fn allocate_entire_range(range: &'static mut FreePageRange) -> &'static mut [u8] {
+        let len = range.pages.len();
+        let requested_pages = len + 1;
+
+        // Re-cast the link and it's adjacently allocated page range into a new allocation
+        // Invariant: it MUST be the case that the FreePageRange is contiguously
+        // allocated preceding the free pages themselves
+        unsafe {
+            assert_eq!((range as *const FreePageRange as *const FreePage).offset(1),
+                       &range.pages[0] as *const FreePage);
+        }
+
+        let slice: &'static mut [u8] = unsafe {
+            let allocation = range as *mut FreePageRange;
+            let sl: &'static mut [FreePageRange] = slice::from_raw_parts_mut(allocation,
+                                                                             requested_pages);
+            slice_cast::cast_mut(sl)
+        };
+        return slice;
     }
 }
