@@ -1,9 +1,10 @@
 [package]
 name = "kalloc"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["David Coffill <decoffill@gmail.com>"]
 
 [dependencies]
 mem_utils = { path="../mem_utils" }
 spinlock = { path = "../spinlock" }
 slice-cast = "0.1.2"
+log = { version = "0.3", default-features = false }

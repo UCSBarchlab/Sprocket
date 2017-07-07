@@ -67,12 +67,11 @@ pub extern "C" fn main() {
     logger::init().unwrap();
     info!("Initializing allocator");
     unsafe {
-        kalloc::init(VirtAddr::new(&mem::end as *const _ as usize + mem::PGSIZE).page_roundup(),
+        kalloc::init(VirtAddr::new(&mem::end as *const _ as usize + 4 * mem::PGSIZE)
+                         .page_roundup(),
                      PhysAddr(4 * 1024 * 1024).to_virt());
     }
 
-    info!("Size of FreePageRange {}",
-          core::mem::size_of::<kalloc::kalloc2::FreePageRange>());
 
 
 
