@@ -82,7 +82,7 @@ pub fn enumerate() {
                     debug!("Found RTL-{:x} at {},{}", dev_id, bus, slot);
                 }
                 INVALID_VENDOR => {}
-                v_id @ _ => {
+                v_id => {
                     debug!("Found unknown device at {},{} with vendor ID {:x}",
                            bus,
                            slot,
@@ -169,6 +169,7 @@ impl PciDevice {
         self.read16(HDR_TYPE_OFFSET)
     }
 
+    #[cfg_attr(feature = "cargo-clippy", allow(blacklisted_name))]
     pub fn read_bar(&self, bar: Bar) -> u32 {
         self.read32(bar as u8)
     }

@@ -27,12 +27,18 @@ pub static ALLOC: Mutex<Allocator> = Mutex::new(Allocator {
     length: 0,
 });
 
+pub unsafe fn init(vstart: VirtAddr, vend: VirtAddr) {
+    ALLOC.lock().free_range(vstart, vend);
+}
+
 #[no_mangle]
+#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
 pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
     ALLOC.lock().allocate(size).expect("Allocation failed")
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
 pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 {
     let new_mem = ALLOC.lock().allocate(size).expect("Allocation failed");
     let num_bytes = Allocator::size_to_pages(size) * PGSIZE;
@@ -46,15 +52,13 @@ pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
 pub extern "C" fn __rust_usable_size(size: usize, _align: usize) -> usize {
     Allocator::size_to_pages(size)
 }
 
-pub unsafe fn init(vstart: VirtAddr, vend: VirtAddr) {
-    ALLOC.lock().free_range(vstart, vend);
-}
-
 #[no_mangle]
+#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
 pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, _align: usize) {
     let num_pages = Allocator::size_to_pages(size);
     unsafe {
@@ -70,6 +74,7 @@ pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, _align: usize) {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
 pub extern "C" fn __rust_reallocate(ptr: *mut u8,
                                     size: usize,
                                     new_size: usize,
@@ -96,6 +101,7 @@ pub extern "C" fn __rust_reallocate(ptr: *mut u8,
 
 #[no_mangle]
 #[allow(unused_variables)]
+#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
 pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
                                             size: usize,
                                             new_size: usize,

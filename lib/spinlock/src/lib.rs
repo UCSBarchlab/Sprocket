@@ -55,13 +55,13 @@ impl<T> Mutex<T> {
 
 impl<'a, T: ?Sized> Deref for MutexGuard<'a, T> {
     type Target = T;
-    fn deref<'b>(&'b self) -> &'b T {
+    fn deref(&self) -> &T {
         &*self.guard.as_ref().unwrap()
     }
 }
 
 impl<'a, T: ?Sized> DerefMut for MutexGuard<'a, T> {
-    fn deref_mut<'b>(&'b mut self) -> &'b mut T {
+    fn deref_mut(&mut self) -> &mut T {
         &mut *(self.guard.as_mut().unwrap())
     }
 }
@@ -75,11 +75,10 @@ impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
         unsafe {
             LOCK_COUNT.fetch_sub(1, atomic::Ordering::SeqCst);
             // if we *can* enable interrupts, based on total number of outstanding locks
-            if LOCK_COUNT.load(atomic::Ordering::SeqCst) == 0 {
-                // if our OS *wants* interrupts enabled
-                if INT_ENABLED.load(atomic::Ordering::Acquire) == true {
-                    irq::enable();
-                }
+            // AND if our OS *wants* interrupts enabled
+            if LOCK_COUNT.load(atomic::Ordering::SeqCst) == 0 &&
+               INT_ENABLED.load(atomic::Ordering::Acquire) {
+                irq::enable();
             }
         }
     }

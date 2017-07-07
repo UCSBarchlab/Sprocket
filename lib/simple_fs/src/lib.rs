@@ -63,7 +63,7 @@ impl<T> FileSystem<T>
 
     pub fn alloc_inode(&mut self, device: u32, inode: Inode) -> Result<u32, FsError> {
 
-        assert!(inode.type_ != InodeType::Unused);
+        assert_ne!(inode.type_, InodeType::Unused);
 
         // Read superblock to get the ilist start
         let mut sb_buf = [0; 512];
@@ -328,7 +328,7 @@ impl<T> FileSystem<T>
     }
 
     pub fn dir_lookup(&self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), FsError> {
-        assert!(dir.type_ == InodeType::Directory, "{:?}", dir.type_);
+        assert_eq!(dir.type_, InodeType::Directory, "{:?}", dir.type_);
         let dirent_size = ::core::mem::size_of::<DirEntry>();
         for offset in Iterator::step_by(0..dir.size, dirent_size) {
             let mut buf = [0; BLOCKSIZE];
@@ -522,7 +522,7 @@ fn buffer_to_sb(buffer: &mut [u8; 512]) -> &mut SuperBlock {
 }
 
 #[repr(C)]
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub struct SuperBlock {
     pub size: u32,
     pub nblocks: u32,

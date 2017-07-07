@@ -88,7 +88,7 @@ impl Allocator {
             let should_insert = prev.next
                 .map_or(true, |n| {
                     (new_range.as_ref() as *const _) < n.as_ref() as *const Range &&
-                    (new_range.as_ref() as *const _) > *&prev as *const Range
+                    (new_range.as_ref() as *const _) > &*prev as *const Range
                 });
 
             if should_insert {
@@ -97,12 +97,11 @@ impl Allocator {
 
                 // can we merge with the next entry?
                 // check if there is a next entry, and if our last address is its first address
-                if new_range.as_mut().next.is_some() {
-                    if new_range.as_mut().end_addr() as usize ==
-                       (new_range.as_mut().unwrap_next() as *mut Range as usize) {
-                        new_range.as_mut().size += new_range.as_mut().unwrap_next().size + 1;
-                        new_range.as_mut().next = new_range.as_mut().unwrap_next().next.take();
-                    }
+                if new_range.as_mut().next.is_some() &&
+                   new_range.as_mut().end_addr() as usize ==
+                   (new_range.as_mut().unwrap_next() as *mut Range as usize) {
+                    new_range.as_mut().size += new_range.as_mut().unwrap_next().size + 1;
+                    new_range.as_mut().next = new_range.as_mut().unwrap_next().next.take();
                 }
 
                 // if we can merge with the previous entry
