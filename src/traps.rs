@@ -114,9 +114,7 @@ pub extern "C" fn trap(tf: &process::TrapFrame) {
                 n.interrupt();
             }
         }
-        Interrupt::TimerInt => unsafe {
-            timer::TICKS += 1;
-        },
+        Interrupt::TimerInt => *timer::TICKS.lock() += 1,
         Interrupt::PageFault => {
 
             panic!("Page fault occured at {:#08x}",

@@ -1,9 +1,10 @@
 use x86::shared::io;
 use traps;
 use picirq;
+use spinlock::Mutex;
 
 const IO_TIMER1: u16 = 0x040; // 8253 Timer #1
-pub static mut TICKS: u32 = 0;
+pub static TICKS: Mutex<u32> = Mutex::new(0);
 
 // Frequency of all three count-down timers;
 // (TIMER_FREQ/freq) is the appropriate count

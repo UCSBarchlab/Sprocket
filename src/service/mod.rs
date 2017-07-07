@@ -78,7 +78,7 @@ impl Service for UserService {
                     if socket.can_recv() {
                         let _ = socket.recv(200);
                         if socket.can_send() {
-                            let seconds = unsafe { timer::TICKS } / 100;
+                            let seconds = *timer::TICKS.lock() / 100;
                             const SECONDS_PER_MINUTE: u32 = 60;
                             const MINUTES_PER_HOUR: u32 = 60;
                             const HOURS_PER_DAY: u32 = 24;

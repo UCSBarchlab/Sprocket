@@ -67,8 +67,7 @@ pub extern "C" fn main() {
     logger::init().unwrap();
     info!("Initializing allocator");
     unsafe {
-        kalloc::init(VirtAddr::new(&mem::end as *const _ as usize + 4 * mem::PGSIZE)
-                         .page_roundup(),
+        kalloc::init(VirtAddr::new(&mem::end as *const _ as usize + mem::PGSIZE).page_roundup(),
                      PhysAddr(4 * 1024 * 1024).to_virt());
     }
 
@@ -113,8 +112,8 @@ pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, lin
         irq::disable();
     }
     unsafe { console::CONSOLE.force_unlock() }
-    unsafe { spinlock::LOCK_COUNT.store(0, core::sync::atomic::Ordering::SeqCst) }
-    unsafe { spinlock::INT_ENABLED.store(false, core::sync::atomic::Ordering::SeqCst) }
+    spinlock::LOCK_COUNT.store(0, core::sync::atomic::Ordering::SeqCst);
+    spinlock::INT_ENABLED.store(false, core::sync::atomic::Ordering::SeqCst);
     error!("Panic! An unrecoverable error occurred at {}:{}",
            file,
            line);
@@ -201,11 +200,15 @@ impl EntryPgDir {
 }
 
 #[no_mangle]
-pub static mut ENTRYPGDIR: EntryPgDir = EntryPgDir::new();
+pub static ENTRYPGDIR: EntryPgDir = EntryPgDir::new();
 
-// This idiotic piece of code exists because Rust doesn't provide a way to ask
+// NB This idiotic piece of code exists because Rust doesn't provide a way to ask
 // that a variable be aligned on a certain boundary (the way that with GCC, you
-// can use __align).  The workaround is to create a fictional SIMD type that must be aligned to 4K.  Then, you can put a zero-length array of type PageAligner4K at the start of an arbitrary struct, to force it to be aligned in a certain way.
+// can use __align).  The workaround is to create a fictional SIMD type that
+// must be aligned to 4K.  Then, you can put a zero-length array of type
+// PageAligner4K at the start of an arbitrary struct, to force it to be aligned
+// in a certain way.
+//
 // THIS IS INCREDIBLY FRAGILE AND MAY BREAK!!!
 #[cfg_attr(rustfmt, rustfmt_skip)]
 #[repr(simd)]

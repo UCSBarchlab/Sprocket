@@ -12,8 +12,8 @@ use x86::shared::flags;
 
 // NB This should be a per CPU variable.  Not that it matters much for a
 // uniprocessor system, but if that were to change then this needs updating
-pub static mut LOCK_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
-pub static mut INT_ENABLED: atomic::AtomicBool = atomic::AtomicBool::new(false);
+pub static LOCK_COUNT: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+pub static INT_ENABLED: atomic::AtomicBool = atomic::AtomicBool::new(false);
 
 /// A wrapper class for `spin::Mutex` that enables and disables interrupts as needed
 pub struct Mutex<T: ?Sized> {

@@ -5,6 +5,7 @@ use x86::shared::segmentation::SegmentDescriptor;
 use x86::shared::segmentation as seg;
 use x86::shared::dtables;
 use x86::shared;
+use spinlock::Mutex;
 use mmu;
 use mem::{PhysAddr, VirtAddr, Address, PGSIZE, KERNBASE, KERNLINK, PHYSTOP, DEVSPACE, EXTMEM};
 
@@ -13,7 +14,7 @@ extern "C" {
     static data: u8;
 }
 
-pub static mut KPGDIR: VirtAddr = VirtAddr(0);
+pub static KPGDIR: Mutex<VirtAddr> = Mutex::new(VirtAddr(0));
 
 lazy_static! {
     /// Table to define kernel mappings in each process page table
@@ -152,9 +153,7 @@ pub fn seginit() {
 
 /// Allocate a page table for the kernel (for use by the scheduler, etc).
 pub fn kvmalloc() {
-    unsafe {
-        KPGDIR = VirtAddr::new(Box::into_raw(setupkvm().unwrap()) as usize);
-    }
+    *KPGDIR.lock() = VirtAddr::new(Box::into_raw(setupkvm().unwrap()) as usize);
     switchkvm();
 }
 
@@ -192,7 +191,7 @@ pub fn setupkvm() -> Result<Box<PageDir>, ()> {
 pub fn switchkvm() {
     // unsafe because we're accessing global state, and we're manipulating register CR3
     unsafe {
-        lcr3(KPGDIR.to_phys());
+        lcr3(KPGDIR.lock().to_phys());
     }
 }
 
