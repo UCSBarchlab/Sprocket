@@ -1,12 +1,9 @@
-#![allow(dead_code)]
 use mem_utils::{VirtAddr, Address, PGSIZE, PHYSTOP, end};
 use core::ptr::Unique;
 use spinlock::Mutex;
 use core::slice;
 use core::mem;
 use core::cmp;
-
-const PTR_SIZE: usize = 4;
 
 pub struct Allocator {
     start: Range,
@@ -20,18 +17,6 @@ pub static ALLOC: Mutex<Allocator> = Mutex::new(Allocator {
     },
     length: 0,
 });
-
-/*
-#[repr(C)]
-pub struct Range {
-    range: &'static [FreePage], // we have our own runtime-sized collection of pages, which doesn't include us but it should
-    _padding: [u8; PGSIZE - 4 * PTR_SIZE],
-    next: Option<&'static Range>, // we have a ref to the next link in the chain
-}
-*/
-
-//[ NEXT(addr, size, __PADDING__) | FREE FREE FREE ... FREE ]
-//[ NEXT(addr, size, __PADDING__) | &[FREE FREE FREE ... FREE] ]
 
 #[repr(C)]
 pub struct Range {
@@ -60,16 +45,11 @@ impl Range {
         unsafe { self.next.as_mut().unwrap().as_mut() }
     }
 
+    // allocate some subset of the range, or possibly the entire range,
+    // but leave the Range intact other than updating its slice
     fn allocate_from_range(&mut self, num_pages: usize) -> *mut u8 {
         assert!(self.size >= num_pages);
-        // allocate some subset of the range, or possibly the entire range,
-        // but leave the Range intact other than updating its slice
 
-        // Take the list of free pages from the Range, divide it as needed, and
-        // replace the remainder back into the Range.  Return the allocated portion
-        //let pages = ::core::mem::replace(&mut self.pages, &mut []);
-        //let (remainder, allocation) = pages.split_at_mut(len - requested_pages);
-        //
         trace!("Allocating from within range {:?} {}",
                &self as *const _,
                self.size);
@@ -81,50 +61,18 @@ impl Range {
         allocation
     }
 
+    // consume the entire range's pages (and also the Range struct itself)
     fn allocate_entire_range(mut range: Unique<Range>) -> *mut u8 {
         unsafe {
             trace!("Allocating entire range {:?} {}",
                    range.as_ref() as *const _,
                    range.as_ref().size);
-
         }
         unsafe { range.as_mut() as *mut Range as *mut u8 }
     }
 }
 
-#[repr(C)]
-pub struct FreePage([u8; 4096]);
-
-
 impl Allocator {
-    /*
-    fn free(&mut self, addr: VirtAddr) {
-        let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
-        assert!(addr.is_page_aligned());
-        assert!(addr >= kernel_start);
-        assert!(addr.to_phys() <= PHYSTOP);
-
-        let freed_page: &'static mut _ =
-            unsafe { (addr.addr() as *mut FreePage).as_mut().unwrap() };
-
-        let mut start = self.freelist;
-
-        match start {
-            Some(r) => {}
-            None => self.freelist = None,
-
-        }
-
-        if let Some(range) = start {
-
-        } else {
-
-        }
-
-        unsafe { self.length += 1 };
-    }
-    */
-
     pub unsafe fn free_range(&mut self, vstart: VirtAddr, vend: VirtAddr) {
         trace!("Freeing range from {:#x} to {:#x}",
                vstart.addr(),
@@ -160,22 +108,7 @@ impl Allocator {
 
                 // can we merge with the next entry?
                 // check if there is a next entry, and if our last address is its first address
-
-                /*
                 if new_range.as_mut().next.is_some() {
-                trace!("{}", new_range.as_mut() as *mut Range as usize
-                }
-
-                */
-
-
-
-
-
-                if new_range.as_mut().next.is_some() {
-                    trace!("us  : {:#x}", new_range.as_mut().end_addr() as usize);
-                    trace!("next: {:#x}",
-                           new_range.as_mut().unwrap_next().offset(0) as usize);
                     if new_range.as_mut().end_addr() as usize ==
                        (new_range.as_mut().unwrap_next() as *mut Range as usize) {
                         new_range.as_mut().size += new_range.as_mut().unwrap_next().size + 1;
@@ -183,15 +116,12 @@ impl Allocator {
                     }
                 }
 
-
                 // if we can merge with the previous entry
                 if prev.end_addr() as usize == (new_range.as_mut() as *mut Range as usize) {
                     prev.next = new_range.as_mut().next.take();
                     prev.size += new_range.as_ref().size + 1; // extend the previous range to include our space
                 }
-
                 return;
-
 
             } else {
                 prev = Self::move_helper(prev).unwrap_next();
@@ -203,13 +133,15 @@ impl Allocator {
         (PGSIZE + size - 1) / PGSIZE
     }
 
-
     fn allocate(&mut self, size: usize) -> Result<*mut u8, &'static str> {
         self.verify();
 
         let mut prev: &mut Range = &mut self.start;
         let requested_pages = Self::size_to_pages(size);
 
+        // this code inspired by Phillip Oppermann's Linked List Allocator
+        // https://github.com/phil-opp/linked-list-allocator/blob/master/src/hole.rs
+        // available under the terms of the MIT License
         loop {
             let next_size = prev.next.map(|ref mut n| unsafe { n.as_ref().size });
             match next_size {
@@ -237,8 +169,8 @@ impl Allocator {
         x
     }
 
+    // Verify that the linked list is well-formed.  Useful for debugging
     fn verify(&mut self) {
-
         let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
 
         let mut size = 0;
@@ -251,22 +183,18 @@ impl Allocator {
                 size += n.as_ref().size + 1;
                 next = n.as_ref().next;
                 if let Some(s) = n.as_ref().next {
-                    // addresses in the list must monotonically increase
-                    trace!("Us:   {:?} {} -> {:#08x } {}",
-                           n.as_ref() as *const _,
-                           n.as_ref().size,
-                           s.as_ref() as *const _ as usize,
-                           s.as_ref().size);
+                    // assert that addresses in the list must monotonically increase, and that
+                    // there are no overlaps between ranges
                     assert!(s.as_ref() as *const _ > n.as_ref() as *const _);
                     assert!(s.as_ref() as *const _ > n.as_mut().end_addr() as *const _);
-                } else {
-                    trace!("Us:   {:?} {}", n.as_ref() as *const _, n.as_ref().size);
                 }
             }
         }
         assert_eq!(size, self.length);
     }
 }
+// Allocator interface allowing us to use Box, etc.
+// See https://doc.rust-lang.org/book/custom-allocators.html for more info
 
 #[no_mangle]
 pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
