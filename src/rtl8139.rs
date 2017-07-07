@@ -100,7 +100,7 @@ impl Rtl8139 {
             // Unmask NIC interrupts in the PIC
             let (line, _) = rtl.pci.read_irq();
             assert_eq!(traps::NIC_IRQ, line);
-            picirq::picenable(traps::NIC_IRQ as i32);
+            picirq::PIC.lock().enable_irq(traps::NIC_IRQ as u32);
 
             Some(rtl)
         } else {

@@ -60,7 +60,7 @@ const LOGO: &'static str = concat!(" █▀▀ █▀█ █▀▀ █▀▀ █
 #[no_mangle]
 pub extern "C" fn main() {
     println!("");
-    for i in [196, 202, 214, 34, 51, 57].iter() {
+    for i in &[196, 202, 214, 34, 51, 57] {
         println!("[38;5;{}m{}", i, LOGO);
     }
 
@@ -80,7 +80,7 @@ pub extern "C" fn main() {
     info!("Initializing kernel segments");
     vm::seginit();
     info!("Configuring PIC");
-    picirq::picinit();
+    picirq::PIC.lock().picinit();
     info!("Setting up interrupt descriptor table");
     traps::trap_vector_init();
     timer::timerinit();

@@ -38,7 +38,7 @@ impl Uart {
             // enable interrupts.
             io::inb(COM1 + 2);
             io::inb(COM1);
-            picirq::picenable(traps::COM1_IRQ as i32);
+            picirq::PIC.lock().enable_irq(traps::COM1_IRQ as u32);
 
             /*
         // Announce that we're here.
