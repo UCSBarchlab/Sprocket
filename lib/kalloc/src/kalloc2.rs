@@ -3,26 +3,30 @@ use mem_utils::{VirtAddr, Address, PGSIZE, PHYSTOP, end};
 use core::ptr::Unique;
 use spinlock::Mutex;
 use core::slice;
-extern crate slice_cast;
+use core::mem;
+use core::cmp;
 
 const PTR_SIZE: usize = 4;
 
 pub struct Allocator {
-    freelist: Option<&'static mut FreePageRange>,
+    start: Range,
     length: usize,
 }
 
 pub static ALLOC: Mutex<Allocator> = Mutex::new(Allocator {
-    freelist: None,
+    start: Range {
+        next: None,
+        size: 0,
+    },
     length: 0,
 });
 
 /*
 #[repr(C)]
-pub struct FreePageRange {
+pub struct Range {
     range: &'static [FreePage], // we have our own runtime-sized collection of pages, which doesn't include us but it should
     _padding: [u8; PGSIZE - 4 * PTR_SIZE],
-    next_range: Option<&'static FreePageRange>, // we have a ref to the next link in the chain
+    next: Option<&'static Range>, // we have a ref to the next link in the chain
 }
 */
 
@@ -30,25 +34,67 @@ pub struct FreePageRange {
 //[ NEXT(addr, size, __PADDING__) | &[FREE FREE FREE ... FREE] ]
 
 #[repr(C)]
-pub struct FreePageRange {
-    next_range: Option<&'static mut FreePageRange>, // we have a ref to the next link in the chain
-    _padding: [u8; PGSIZE - 2 * PTR_SIZE],
-    pages: &'static mut [FreePage],
+pub struct Range {
+    next: Option<Unique<Range>>, // we have a ref to the next link in the chain
+    size: usize, // the length not including this struct
+}
+
+impl Range {
+    unsafe fn offset(&mut self, pages: isize) -> *mut u8 {
+        let base = self.base_addr();
+        base.offset(pages * (PGSIZE as isize))
+    }
+
+    unsafe fn base_addr(&mut self) -> *mut u8 {
+        self as *mut Range as *mut u8
+    }
+
+    unsafe fn end_addr(&mut self) -> *mut u8 {
+        // NB This may cause problems when virtual memory is more than ~2GiB due to downcasting
+        // from usize to isize
+        let size = (self.size as isize) + 1;
+        self.offset(size)
+    }
+
+    fn unwrap_next(&mut self) -> &mut Range {
+        unsafe { self.next.as_mut().unwrap().as_mut() }
+    }
+
+    fn allocate_from_range(&mut self, num_pages: usize) -> *mut u8 {
+        assert!(self.size >= num_pages);
+        // allocate some subset of the range, or possibly the entire range,
+        // but leave the Range intact other than updating its slice
+
+        // Take the list of free pages from the Range, divide it as needed, and
+        // replace the remainder back into the Range.  Return the allocated portion
+        //let pages = ::core::mem::replace(&mut self.pages, &mut []);
+        //let (remainder, allocation) = pages.split_at_mut(len - requested_pages);
+        //
+        trace!("Allocating from within range {:?} {}",
+               &self as *const _,
+               self.size);
+
+        let s = self.size + 1;
+        // get start address
+        let allocation = unsafe { self.offset((s - num_pages) as isize) };
+        self.size -= num_pages;
+        allocation
+    }
+
+    fn allocate_entire_range(mut range: Unique<Range>) -> *mut u8 {
+        unsafe {
+            trace!("Allocating entire range {:?} {}",
+                   range.as_ref() as *const _,
+                   range.as_ref().size);
+
+        }
+        unsafe { range.as_mut() as *mut Range as *mut u8 }
+    }
 }
 
 #[repr(C)]
 pub struct FreePage([u8; 4096]);
 
-unsafe fn free_range(vstart: VirtAddr, vend: VirtAddr) {
-    assert!(vstart < vend);
-    assert!(vstart.is_page_aligned());
-    assert!(vend.is_page_aligned());
-
-    let new_range = vstart.addr() as usize as *mut FreePageRange;
-    //*new_range.range =
-
-    //let new_range = slice::from_raw_parts_mut(vstart.addr() as usize as *mut FreePageRange);
-}
 
 impl Allocator {
     /*
@@ -79,83 +125,218 @@ impl Allocator {
     }
     */
 
-    fn size_to_pages(size: usize) -> usize {
+    pub unsafe fn free_range(&mut self, vstart: VirtAddr, vend: VirtAddr) {
+        trace!("Freeing range from {:#x} to {:#x}",
+               vstart.addr(),
+               vend.addr());
+        self.verify();
+        assert!(vstart < vend);
+        assert!(vstart.is_page_aligned());
+        assert!(vend.is_page_aligned());
+
+        // Create the new range object
+        let mut new_range = Unique::new(vstart.addr() as usize as *mut Range);
+        *new_range.as_mut() = Range {
+            next: None,
+            size: (vstart.pageno()..vend.pageno()).len() - 1,
+        };
+
+        self.length += new_range.as_ref().size + 1;
+
+        let mut prev: &mut Range = &mut self.start;
+
+        loop {
+            // we should insert if we're larger than the previous element and smaller than the next
+            // element, or if the next element is None (because we've reached the end of the list)
+            let should_insert = prev.next
+                .map_or(true, |n| {
+                    (new_range.as_ref() as *const _) < n.as_ref() as *const Range &&
+                    (new_range.as_ref() as *const _) > *&prev as *const Range
+                });
+
+            if should_insert {
+                new_range.as_mut().next = prev.next.take();
+                prev.next = Some(new_range);
+
+                // can we merge with the next entry?
+                // check if there is a next entry, and if our last address is its first address
+
+                /*
+                if new_range.as_mut().next.is_some() {
+                trace!("{}", new_range.as_mut() as *mut Range as usize
+                }
+
+                */
+
+
+
+
+
+                if new_range.as_mut().next.is_some() {
+                    trace!("us  : {:#x}", new_range.as_mut().end_addr() as usize);
+                    trace!("next: {:#x}",
+                           new_range.as_mut().unwrap_next().offset(0) as usize);
+                    if new_range.as_mut().end_addr() as usize ==
+                       (new_range.as_mut().unwrap_next() as *mut Range as usize) {
+                        new_range.as_mut().size += new_range.as_mut().unwrap_next().size + 1;
+                        new_range.as_mut().next = new_range.as_mut().unwrap_next().next.take();
+                    }
+                }
+
+
+                // if we can merge with the previous entry
+                if prev.end_addr() as usize == (new_range.as_mut() as *mut Range as usize) {
+                    prev.next = new_range.as_mut().next.take();
+                    prev.size += new_range.as_ref().size + 1; // extend the previous range to include our space
+                }
+
+                return;
+
+
+            } else {
+                prev = Self::move_helper(prev).unwrap_next();
+            }
+        }
+    }
+
+    pub fn size_to_pages(size: usize) -> usize {
         (PGSIZE + size - 1) / PGSIZE
     }
 
-    fn allocate(&'static mut self, size: usize) -> Result<&'static mut [u8], &'static str> {
-        assert_eq!(::core::mem::size_of::<FreePage>(), PGSIZE);
-        assert_eq!(::core::mem::size_of::<FreePageRange>(), PGSIZE);
 
+    fn allocate(&mut self, size: usize) -> Result<*mut u8, &'static str> {
+        self.verify();
+
+        let mut prev: &mut Range = &mut self.start;
         let requested_pages = Self::size_to_pages(size);
 
-        // If we have any memory we can possibly allocate
-        if self.freelist.is_some() {
-            let len = self.freelist.as_mut().unwrap().pages.len();
+        loop {
+            let next_size = prev.next.map(|ref mut n| unsafe { n.as_ref().size });
+            match next_size {
+                Some(s) if s >= requested_pages => {
+                    let allocation = prev.unwrap_next().allocate_from_range(requested_pages);
+                    self.length -= requested_pages;
+                    return Ok(allocation);
+                }
 
-            // If the requested memory is the exact size of the range, plus the FreePageRange that
-            // points to it
-            if len + 1 == requested_pages {
-                // update the freelist head to point to the next element (or None)
-                let next = self.freelist.as_mut().unwrap().next_range.take();
-                let old_head = ::core::mem::replace(&mut self.freelist, next);
+                Some(s) if s + 1 == requested_pages => {
+                    // Update the linked list so that prev's next points to current's next
+                    let next_next = prev.unwrap_next().next.take();
+                    let next = mem::replace(&mut prev.next, next_next);
+                    self.length -= requested_pages;
+                    return Ok(Range::allocate_entire_range(next.unwrap()));
+                }
 
-                let slice = Self::allocate_entire_range(old_head.unwrap());
-                return Ok(slice);
-            } else if len >= requested_pages {
-                // allocate some subset of the range, or possibly the entire range,
-                let slice = Self::allocate_from_range(size, self.freelist.as_mut().unwrap());
-                return Ok(slice);
+                Some(_) => prev = Self::move_helper(prev).unwrap_next(),
+                None => return Err("Could not find large enough contiguous area"),
             }
-        } else {
-            return Err("Unable to find a contiguous range");
         }
-
-        /*
-        let mut last = &mut self.freelist;
-        let mut next = &mut self.freelist.next_range;
-        while let Some(n) = next {}
-        */
-
-
-        Err("Unable to find a contiguous range")
     }
 
-    fn allocate_from_range(size: usize, range: &'static mut FreePageRange) -> &'static mut [u8] {
-        let requested_pages = Self::size_to_pages(size);
-        let len = range.pages.len();
-        assert!(len >= requested_pages);
-        // allocate some subset of the range, or possibly the entire range,
-        // but leave the FreePageRange intact other than updating its slice
-
-        // Take the list of free pages from the FreePageRange, divide it as needed, and
-        // replace the remainder back into the FreePageRange.  Return the allocated portion
-        let pages = ::core::mem::replace(&mut range.pages, &mut []);
-        let (remainder, allocation) = pages.split_at_mut(len - requested_pages);
-        range.pages = remainder;
-
-        let slice: &'static mut [u8] = unsafe { slice_cast::cast_mut(allocation) };
-        slice
+    fn move_helper<T>(x: T) -> T {
+        x
     }
 
-    fn allocate_entire_range(range: &'static mut FreePageRange) -> &'static mut [u8] {
-        let len = range.pages.len();
-        let requested_pages = len + 1;
+    fn verify(&mut self) {
 
-        // Re-cast the link and it's adjacently allocated page range into a new allocation
-        // Invariant: it MUST be the case that the FreePageRange is contiguously
-        // allocated preceding the free pages themselves
-        unsafe {
-            assert_eq!((range as *const FreePageRange as *const FreePage).offset(1),
-                       &range.pages[0] as *const FreePage);
+        let kernel_start: VirtAddr = VirtAddr(unsafe { &end } as *const _ as usize);
+
+        let mut size = 0;
+        let mut next = self.start.next;
+        while let Some(mut n) = next {
+            unsafe {
+                let addr = VirtAddr::new(n.as_ref() as *const _ as usize);
+                assert!(addr > kernel_start);
+                assert!(addr.to_phys() < PHYSTOP);
+                size += n.as_ref().size + 1;
+                next = n.as_ref().next;
+                if let Some(s) = n.as_ref().next {
+                    // addresses in the list must monotonically increase
+                    trace!("Us:   {:?} {} -> {:#08x } {}",
+                           n.as_ref() as *const _,
+                           n.as_ref().size,
+                           s.as_ref() as *const _ as usize,
+                           s.as_ref().size);
+                    assert!(s.as_ref() as *const _ > n.as_ref() as *const _);
+                    assert!(s.as_ref() as *const _ > n.as_mut().end_addr() as *const _);
+                } else {
+                    trace!("Us:   {:?} {}", n.as_ref() as *const _, n.as_ref().size);
+                }
+            }
         }
-
-        let slice: &'static mut [u8] = unsafe {
-            let allocation = range as *mut FreePageRange;
-            let sl: &'static mut [FreePageRange] = slice::from_raw_parts_mut(allocation,
-                                                                             requested_pages);
-            slice_cast::cast_mut(sl)
-        };
-        return slice;
+        assert_eq!(size, self.length);
     }
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
+    ALLOC.lock().allocate(size).expect("Allocation failed")
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 {
+    let new_mem = ALLOC.lock().allocate(size).expect("Allocation failed");
+    let num_bytes = Allocator::size_to_pages(size) * PGSIZE;
+    {
+        let slice: &mut [u8] = unsafe { slice::from_raw_parts_mut(new_mem, num_bytes) };
+        for b in slice.iter_mut() {
+            *b = 0;
+        }
+    }
+    new_mem
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_usable_size(size: usize, _align: usize) -> usize {
+    Allocator::size_to_pages(size)
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, _align: usize) {
+    let num_pages = Allocator::size_to_pages(size);
+    unsafe {
+        let start_addr = VirtAddr::new(ptr as usize);
+        let end_addr = VirtAddr::new(ptr.offset((num_pages * PGSIZE) as isize) as usize);
+        assert_eq!(end_addr.addr() - start_addr.addr(), num_pages * PGSIZE);
+        assert_eq!(end_addr.pageno() - start_addr.pageno(), num_pages);
+        trace!("Deallocating {:#08x} to {:#08x}",
+               start_addr.addr(),
+               end_addr.addr());
+        ALLOC.lock().free_range(start_addr, end_addr);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn __rust_reallocate(ptr: *mut u8,
+                                    size: usize,
+                                    new_size: usize,
+                                    _align: usize)
+                                    -> *mut u8 {
+    let num_old_pages = Allocator::size_to_pages(size);
+    let num_new_pages = Allocator::size_to_pages(new_size);
+    let new_mem = ALLOC.lock().allocate(new_size).expect("Allocation failed");
+
+    let old_mem = unsafe { slice::from_raw_parts_mut(ptr, num_old_pages * PGSIZE) };
+    let new = unsafe { slice::from_raw_parts_mut(new_mem, num_new_pages * PGSIZE) };
+
+    let overlap = cmp::min(num_old_pages, num_new_pages) * PGSIZE;
+    new[..overlap].copy_from_slice(&old_mem[..overlap]);
+
+    unsafe {
+        let start_addr = VirtAddr::new(ptr as usize);
+        let end_addr = VirtAddr::new(ptr.offset((num_old_pages * PGSIZE) as isize) as usize);
+        ALLOC.lock().free_range(start_addr, end_addr);
+    }
+
+    new.as_mut_ptr()
+}
+
+#[no_mangle]
+#[allow(unused_variables)]
+pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
+                                            size: usize,
+                                            new_size: usize,
+                                            align: usize)
+                                            -> usize {
+    size
 }
