@@ -44,6 +44,7 @@ impl Log for SimpleLogger {
 }
 
 
+#[allow(dead_code)]
 pub fn init() -> Result<(), SetLoggerError> {
     unsafe {
         log::set_logger_raw(|max_level| {

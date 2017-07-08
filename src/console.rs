@@ -5,18 +5,9 @@ use uart;
 
 const BACKSPACE: u8 = 0x08;
 const ASCII_BACKSPACE: u8 = 0x7f;
-const INPUT_BUF: usize = 128;
-
 
 lazy_static! {
     pub static ref CONSOLE: spinlock::Mutex<Console> = spinlock::Mutex::new(Console::new());
-}
-
-struct Input {
-    buf: [u8; INPUT_BUF],
-    r: usize, // Read index
-    w: usize, // Write index
-    e: usize, // Edit index
 }
 
 pub struct Console {

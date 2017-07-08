@@ -53,10 +53,10 @@ pub use traps::trap;
 use x86::shared::irq;
 use service::Service;
 
-
 const LOGO: &'static str = concat!(" █▀▀ █▀█ █▀▀ █▀▀ █   █▀█ █▀▀   █ ▀▀▄\n",
                                    " █   █ █ █▀▀ █▀▀ █   █ █ ▀▀█ ▄▀  ▄▀\n",
                                    " ▀▀▀ ▀▀▀ ▀   ▀   ▀▀▀ ▀▀▀ ▀▀▀ ▀   ▀▀▀");
+
 #[no_mangle]
 pub extern "C" fn main() {
     println!("");
@@ -67,12 +67,10 @@ pub extern "C" fn main() {
     logger::init().unwrap();
     info!("Initializing allocator");
     unsafe {
-        kalloc::init(VirtAddr::new(&mem::end as *const _ as usize + mem::PGSIZE).page_roundup(),
-                     PhysAddr(4 * 1024 * 1024).to_virt());
+        let heap_start = VirtAddr::new(&mem::end as *const _ as usize + mem::PGSIZE).page_roundup();
+        let heap_end = PhysAddr(4 * 1024 * 1024).to_virt();
+        kalloc::init(heap_start, heap_end);
     }
-
-
-
 
     info!("Initializing kernel paging");
     vm::kvmalloc();
@@ -97,21 +95,17 @@ pub extern "C" fn main() {
         *rtl8139::NIC.lock() = rtl8139::Rtl8139::init();
     }
 
-
     info!("COFFLOS initialization complete, jumping to user code");
     unsafe { irq::enable() };
     service::UserService::start();
     panic!("User application ended");
 }
 
-
 #[lang = "panic_fmt"]
 #[no_mangle]
 pub extern "C" fn panic_fmt(fmt: ::core::fmt::Arguments, file: &'static str, line: u32) -> ! {
-    unsafe {
-        irq::disable();
-    }
-    unsafe { console::CONSOLE.force_unlock() }
+    unsafe { irq::disable() };
+    unsafe { console::CONSOLE.force_unlock() };
     spinlock::LOCK_COUNT.store(0, core::sync::atomic::Ordering::SeqCst);
     spinlock::INT_ENABLED.store(false, core::sync::atomic::Ordering::SeqCst);
     error!("Panic! An unrecoverable error occurred at {}:{}",

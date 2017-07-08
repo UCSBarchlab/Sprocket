@@ -3,8 +3,9 @@ use core;
 use process;
 use x86::shared::segmentation::SegmentDescriptor;
 use x86::shared::segmentation as seg;
-use x86::shared::dtables;
-use x86::shared;
+use x86::shared::dtables::{DescriptorTablePointer, lgdt};
+use x86::shared::PrivilegeLevel;
+use x86::shared::control_regs;
 use spinlock::Mutex;
 use mmu;
 use mem::{PhysAddr, VirtAddr, Address, PGSIZE, KERNBASE, KERNLINK, PHYSTOP, DEVSPACE, EXTMEM};
@@ -21,6 +22,7 @@ lazy_static! {
     static ref KMAP: [Kmap; 4] = {
         #[allow(non_snake_case)]
         let DATA_BEGIN: VirtAddr = VirtAddr(unsafe { &data } as *const _ as usize);
+
         [
             Kmap {
                 virt: KERNBASE,
@@ -105,49 +107,40 @@ pub fn seginit() {
     // Unsafe primarily because of global state manipulation.
     // TODO: see if we can navigate around this by passing it as an arg,
     // and/or refactoring this as a struct with methods.
+    let mut cpu = process::CPU.lock();
+
+    let kcode = SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       PrivilegeLevel::Ring0);
+
+    let kdata = SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       PrivilegeLevel::Ring0);
+
+    let ucode = SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Code(seg::CODE_READ),
+                                       false,
+                                       PrivilegeLevel::Ring3);
+    let udata = SegmentDescriptor::new(0x00000000,
+                                       0xffffffff,
+                                       seg::Type::Data(seg::DATA_WRITE),
+                                       false,
+                                       PrivilegeLevel::Ring3);
+
+    cpu.gdt[Segment::Null as usize] = SegmentDescriptor::NULL;
+    cpu.gdt[Segment::KCode as usize] = kcode;
+    cpu.gdt[Segment::KData as usize] = kdata;
+    cpu.gdt[Segment::UCode as usize] = ucode;
+    cpu.gdt[Segment::UData as usize] = udata;
+
     unsafe {
-        if process::CPU.is_none() {
-            process::CPU = Some(process::Cpu::new());
-        }
-
-        if let Some(ref mut cpu) = process::CPU {
-            cpu.gdt[Segment::Null as usize] = SegmentDescriptor::NULL;
-            cpu.gdt[Segment::KCode as usize] =
-                SegmentDescriptor::new(0x00000000,
-                                       0xffffffff,
-                                       seg::Type::Code(seg::CODE_READ),
-                                       false,
-                                       shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::KData as usize] =
-                SegmentDescriptor::new(0x00000000,
-                                       0xffffffff,
-                                       seg::Type::Data(seg::DATA_WRITE),
-                                       false,
-                                       shared::PrivilegeLevel::Ring0);
-            cpu.gdt[Segment::UCode as usize] =
-                SegmentDescriptor::new(0x00000000,
-                                       0xffffffff,
-                                       seg::Type::Code(seg::CODE_READ),
-                                       false,
-                                       shared::PrivilegeLevel::Ring3);
-            cpu.gdt[Segment::UData as usize] =
-                SegmentDescriptor::new(0x00000000,
-                                       0xffffffff,
-                                       seg::Type::Data(seg::DATA_WRITE),
-                                       false,
-                                       shared::PrivilegeLevel::Ring3);
-
-            /*
-            info!("Flags {:?}", cpu.gdt[1].limit2_flags);
-            info!("Flags 0x{:02x}", cpu.gdt[1].limit2_flags.bits());
-            info!("Flags 0x{:02x}", cpu.gdt[1].access.bits());
-            assert!(cpu.gdt[1].limit2_flags.contains(seg::FLAGS_G));
-            */
-
-
-            let d = dtables::DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
-            dtables::lgdt(&d);
-        }
+        let d = DescriptorTablePointer::new_gdtp(&cpu.gdt[0..mmu::NSEGS]);
+        lgdt(&d);
     }
 }
 
@@ -166,21 +159,12 @@ pub fn setupkvm() -> Result<Box<PageDir>, ()> {
     // We know this is okay, just for convenience
     assert!(PHYSTOP.to_virt() <= DEVSPACE);
 
-    {
-        for k in KMAP.iter() {
-            map_pages(&mut pgdir[..],
-                      k.virt,
-                      k.p_end - k.p_start,
-                      k.p_start,
-                      k.perm)?;
-        }
-
-        // needed to do memory-mapped PCI configuration
-        //map_pages(&mut pgdir[..],
-        //          VirtAddr::new(0xe0000), // virtual base
-        //          0xfffff - 0xe0000, // size
-        //          PhysAddr::new(0xe0000), // phys base
-        //          PRESENT)?; // read only
+    for k in KMAP.iter() {
+        map_pages(&mut pgdir[..],
+                  k.virt,
+                  k.p_end - k.p_start,
+                  k.p_start,
+                  k.perm)?;
     }
 
     Ok(pgdir)
@@ -189,59 +173,13 @@ pub fn setupkvm() -> Result<Box<PageDir>, ()> {
 /// Switch HW page table register (control reg 3) to the kernel page table.  This is used when no process
 /// is running.
 pub fn switchkvm() {
-    // unsafe because we're accessing global state, and we're manipulating register CR3
     unsafe {
         lcr3(KPGDIR.lock().to_phys());
     }
 }
 
 unsafe fn lcr3(addr: PhysAddr) {
-    asm!("mov $0, %cr3" : : "r" (addr.addr()) : : "volatile");
-}
-
-/*
-fn switchuvm(process: &mut Process) {
-    //pushcli();
-    unsafe {
-
-        if let Some(ref mut cpu) = process::CPU {
-
-            cpu.gdt[Segment::TSS as usize] = seg16(&cpu.ts as *const _ as usize,
-                                                   core::mem::size_of::<SegmentDescriptor>() - 1,
-                                                   descriptor::FLAGS_TYPE_SYS_NATIVE_TSS_AVAILABLE,
-                                                   shared::PrivilegeLevel::Ring0);
-        }
-    }
-
-    /*
-  cpu.gdt[SEG_TSS] = SEG16(STS_T32A, &cpu->ts, sizeof(cpu->ts)-1, 0);
-  cpu.gdt[SEG_TSS].s = 0;
-  cpu.ts.ss0 = SEG_KDATA << 3;
-  cpu.ts.esp0 = (uint)p->kstack + KSTACKSIZE;
-  // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
-  // forbids I/O instructions (e.g., inb and outb) from user space
-  cpu->ts.iomb = (ushort) 0xFFFF;
-  ltr(SEG_TSS << 3);
-  lcr3(V2P(p->pgdir));  // switch to process's address space
-  //popcli();
-  */
-}
-*/
-
-
-pub fn inituvm(pgdir: &mut PageDir, init: &[u8]) {
-    assert!(init.len() >= PGSIZE, "inituvm: size larger than a page");
-
-    let mut mem = box [0 as u8; 4096];
-
-    mem[..init.len()].copy_from_slice(init);
-    map_pages(pgdir,
-              VirtAddr::new(0),
-              PGSIZE,
-              VirtAddr::new(Box::into_raw(mem) as usize).to_phys(),
-              USER | WRITABLE)
-        .expect("inituvm: Map pages failed");
-
+    control_regs::cr3_write(addr.addr() as u64);
 }
 
 /// Given page directory entries, Create PTEs for virtual addresses starting at va.

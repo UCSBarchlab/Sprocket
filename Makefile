@@ -64,11 +64,6 @@ bootblock: src/bootasm.S src/bootmain.rs
 	$(OBJCOPY) -S -O binary -j .text bootblock.o bootblock
 	./sign.pl bootblock
 
-initcode: src/initcode.S
-	$(CC) $(CFLAGS) -nostdinc -I. -c src/initcode.S
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o initcode.out initcode.o
-	$(OBJCOPY) -S -O binary initcode.out initcode
-
 cofflos.img: bootblock kernel fs.img
 	dd if=/dev/zero of=cofflos.img count=10000
 	dd if=bootblock of=cofflos.img conv=notrunc
@@ -93,11 +88,9 @@ trapasm.o: src/trapasm.S
 swtch.o: src/swtch.S
 	gcc -m32 -gdwarf-2 -Wa,-divide -c -o swtch.o src/swtch.S
 
-kernel: cargo $(rust_os) entry.o kernel.ld initcode vectors.o trapasm.o swtch.o
-	@ld -n --gc-section -T kernel.ld -o kernel entry.o vectors.o trapasm.o swtch.o $(rust_os) -b binary initcode
+kernel: cargo $(rust_os) entry.o kernel.ld vectors.o trapasm.o swtch.o
+	@ld -n --gc-section -T kernel.ld -o kernel entry.o vectors.o trapasm.o swtch.o $(rust_os) -b binary
 	$(OBJDUMP) -t kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > kernel.sym
-
--include *.d
 
 cargo:
 	xargo rustc --target $(target) -- -Z no-landing-pads --crate-type=staticlib -C relocation-model=static -C debuginfo=2 -C target-feature=-mmx,-sse
@@ -105,6 +98,6 @@ cargo:
 clean:
 	rm -rf *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*.o *.d *.asm *.sym vectors.S bootblock \
-	initcode initcode.out kernel cofflos.img fs.img kernelmemfs mkfs \
+	kernel cofflos.img fs.img kernelmemfs mkfs \
 	.gdbinit target \
 	$(UPROGS)
