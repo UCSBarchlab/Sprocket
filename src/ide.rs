@@ -18,11 +18,11 @@ pub const IDE_CMD_RDMUL: usize = 0xc4;
 pub const IDE_CMD_WRMUL: usize = 0xc5;
 
 impl fs::Disk for Ide {
-    fn write(&mut self, buffer: &[u8], device: u32, sector: u32) -> Result<usize, fs::DiskError> {
-        self.write(buffer, device, sector)
+    fn write(&mut self, buf: &[u8], dev: u32, sector: u32) -> Result<usize, fs::DiskError> {
+        Ide::write(self, buf, dev, sector)
     }
-    fn read(&self, mut buffer: &mut [u8], device: u32, sector: u32) -> Result<(), fs::DiskError> {
-        Ide::read(self, &mut buffer, device, sector)
+    fn read(&self, mut buf: &mut [u8], dev: u32, sector: u32) -> Result<(), fs::DiskError> {
+        Ide::read(self, &mut buf, dev, sector)
     }
 
     fn sector_size() -> usize {

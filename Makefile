@@ -36,7 +36,7 @@ qemu-gdb: fs.img cofflos.img .gdbinit
 ifndef CPUS
 CPUS := 2
 endif
-QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=cofflos.img,index=0,media=disk,format=raw -m 512 $(QEMUEXTRA) -d guest_errors -device rtl8139,netdev=unet,mac='C0:FF:EE:12:34:56' -netdev tap,id=unet,helper=/usr/lib/qemu/qemu-bridge-helper -object filter-dump,netdev=unet,id=netdev,file=dump.pcap
+QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=cofflos.img,index=0,media=disk,format=raw -m 512 $(QEMUEXTRA) -d guest_errors -device rtl8139,netdev=unet,mac='C0:FF:EE:12:34:56' -netdev tap,id=unet,helper=/usr/lib/qemu/qemu-bridge-helper# -object filter-dump,netdev=unet,id=netdev,file=dump.pcap
 #-d int -no-reboot
 
 qemu: fs.img cofflos.img

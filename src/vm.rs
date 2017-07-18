@@ -76,10 +76,10 @@ pub type PageDir = [PageDirEntry; 1024];
 
 bitflags! {
     /// Flags to control permissions and other aspects of PageTableEntry and PageDirEntry
-    pub flags Entry: usize {
-        const PRESENT  = 1,
-        const WRITABLE = 1 << 1,
-        const USER     = 1 << 2,
+    pub struct Entry: usize {
+        const PRESENT  = 1;
+        const WRITABLE = 1 << 1;
+        const USER     = 1 << 2;
     }
 }
 
@@ -103,10 +103,6 @@ pub enum Segment {
 
 
 pub fn seginit() {
-
-    // Unsafe primarily because of global state manipulation.
-    // TODO: see if we can navigate around this by passing it as an arg,
-    // and/or refactoring this as a struct with methods.
     let mut cpu = process::CPU.lock();
 
     let kcode = SegmentDescriptor::new(0x00000000,

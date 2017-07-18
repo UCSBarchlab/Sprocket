@@ -77,13 +77,13 @@ impl Rtl8139 {
 
 
             // Inform card about RX buffer
-            let virt_addr = VirtAddr::new(&mut (rtl.rx_buffer[0]) as *mut u8 as usize);
-            io::outl(rtl.iobase + RB_START_REG, virt_addr.to_phys().addr() as u32);
+            let vaddr = VirtAddr::new(&mut (rtl.rx_buffer[0]) as *mut u8 as usize);
+            io::outl(rtl.iobase + RB_START_REG, vaddr.to_phys().addr() as u32);
 
             // Inform card about TX buffers
             for (off, tsad) in TSAD.iter().enumerate() {
-                let virt_addr = VirtAddr::new(&rtl.tx_buffer[off][0] as *const u8 as usize);
-                io::outl(rtl.iobase + tsad, virt_addr.to_phys().addr() as u32);
+                let vaddr = VirtAddr::new(&rtl.tx_buffer[off][0] as *const u8 as usize);
+                io::outl(rtl.iobase + tsad, vaddr.to_phys().addr() as u32);
             }
 
             // Enable interrupts for TX OK & RX OK
@@ -147,7 +147,8 @@ impl Rtl8139 {
 
     // access a TSD
     fn tsd(&self, off: u8) -> TxStatusDesc {
-        unsafe { TxStatusDesc::from_bits(io::inl(self.iobase + TSD[off as usize])).unwrap() }
+        let desc = unsafe { io::inl(self.iobase + TSD[off as usize]) };
+        TxStatusDesc::from_bits(desc).unwrap()
     }
 
     fn set_tsd(&mut self, tsad: TxStatusDesc, off: u8) {
@@ -231,98 +232,98 @@ impl Rtl8139 {
 }
 
 bitflags! {
-    pub flags CommandReg: u8 {
-        const RX_BUF_EMPTY = 1,
+    pub struct CommandReg: u8 {
+        const RX_BUF_EMPTY = 1;
         // reserved
-        const TX_ENABLE = 1 << 2,
-        const RX_ENABLE = 1 << 3,
-        const RESET     = 1 << 4,
+        const TX_ENABLE = 1 << 2;
+        const RX_ENABLE = 1 << 3;
+        const RESET     = 1 << 4;
     }
 }
 
 bitflags! {
-    pub flags RxConfig: u32 {
-        const ACCEPT_ALL = 1,
-        const ACCEPT_PHYS_MATCH = 1 << 1,
-        const ACCEPT_MULTICAST = 1 << 2,
-        const ACCEPT_BCAST = 1 << 3,
-        const ACCEPT_RUNT = 1 << 4,
-        const ACCEPT_ERR = 1 << 5,
-        const WRAP               = 1 << 7,
+    pub struct RxConfig: u32 {
+        const ACCEPT_ALL = 1;
+        const ACCEPT_PHYS_MATCH = 1 << 1;
+        const ACCEPT_MULTICAST = 1 << 2;
+        const ACCEPT_BCAST = 1 << 3;
+        const ACCEPT_RUNT = 1 << 4;
+        const ACCEPT_ERR = 1 << 5;
+        const WRAP               = 1 << 7;
         // Max DMA burst config flags are not implemented here
-        const RX_BUF_8K = 0b00 << 11,
-        const RX_BUF_16K = 0b01 << 11,
-        const RX_BUF_32K = 0b10 << 11,
-        const RX_BUF_64K = 0b11 << 11,
+        const RX_BUF_8K = 0b00 << 11;
+        const RX_BUF_16K = 0b01 << 11;
+        const RX_BUF_32K = 0b10 << 11;
+        const RX_BUF_64K = 0b11 << 11;
         // RX FIFO Threshold flags are not implemented here
-        const RER8               = 1 << 16,
+        const RER8               = 1 << 16;
     }
 }
 
 bitflags! {
-    pub flags IntStatus: u16 {
-        const RX_OK          = 1,
-        const RX_ERR         = 1 << 1,
-        const TX_OK          = 1 << 2,
-        const TX_ERR         = 1 << 3,
-        const RX_OVW         = 1 << 4,
-        const PUN_LINKCHG    = 1 << 5,
-        const FIFO_OVW       = 1 << 6,
-        const LEN_CHG        = 1 << 13,
-        const TIMEOUT        = 1 << 14,
-        const SYS_ERR        = 1 << 15,
+    pub struct IntStatus: u16 {
+        const RX_OK          = 1;
+        const RX_ERR         = 1 << 1;
+        const TX_OK          = 1 << 2;
+        const TX_ERR         = 1 << 3;
+        const RX_OVW         = 1 << 4;
+        const PUN_LINKCHG    = 1 << 5;
+        const FIFO_OVW       = 1 << 6;
+        const LEN_CHG        = 1 << 13;
+        const TIMEOUT        = 1 << 14;
+        const SYS_ERR        = 1 << 15;
     }
 }
 
 bitflags! {
-    pub flags RxHeader: u16 {
-        const RX_OK_          = 1,
-        const FRAME_ALIGN_ERR = 1 << 1,
-        const CRC_ERR         = 1 << 2,
-        const LONG_PKT        = 1 << 3,
-        const RUNT_PKT        = 1 << 4,
-        const INVAL_SYM_ERR   = 1 << 5,
-        const BCAST_PKT       = 1 << 13,
-        const PHYS_MATCH      = 1 << 14,
-        const MULTICAST_PKT   = 1 << 15,
+    pub struct RxHeader: u16 {
+        const RX_OK_          = 1;
+        const FRAME_ALIGN_ERR = 1 << 1;
+        const CRC_ERR         = 1 << 2;
+        const LONG_PKT        = 1 << 3;
+        const RUNT_PKT        = 1 << 4;
+        const INVAL_SYM_ERR   = 1 << 5;
+        const BCAST_PKT       = 1 << 13;
+        const PHYS_MATCH      = 1 << 14;
+        const MULTICAST_PKT   = 1 << 15;
     }
 }
 
 // TSD0-3
 bitflags! {
-    pub flags TxStatusDesc: u32 {
-        const LEN_0 = 1,
-        const LEN_1 = 1 << 1,
-        const LEN_2 = 1 << 2,
-        const LEN_3 = 1 << 3,
-        const LEN_4 = 1 << 4,
-        const LEN_5 = 1 << 5,
-        const LEN_6 = 1 << 6,
-        const LEN_7 = 1 << 7,
-        const LEN_8 = 1 << 8,
-        const LEN_9 = 1 << 9,
-        const LEN_10 = 1 << 10,
-        const LEN_11 = 1 << 11,
-        const LEN_12 = 1 << 12,
-        const OWN  = 1 << 13,
-        const TUN  = 1 << 14,
-        const TOK  = 1 << 15,
-        const ERTX_0 = 1 << 16,
-        const ERTX_1 = 1 << 17,
-        const ERTX_2 = 1 << 18,
-        const ERTX_3 = 1 << 19,
-        const ERTX_4 = 1 << 20,
-        const ERTX_5 = 1 << 21,
-        const RESERVED_1 = 1 << 22,
-        const RESERVED_2 = 1 << 23,
-        const NCC_0 = 1 << 24,
-        const NCC_1 = 1 << 25,
-        const NCC_2 = 1 << 26,
-        const NCC_3 = 1 << 27,
-        const CDH  = 1 << 28,
-        const OWC  = 1 << 29,
-        const TABT = 1 << 30,
-        const CRS  = 1 << 31,
+    pub struct TxStatusDesc: u32 {
+        const LEN_0 = 1;
+        const LEN_1 = 1 << 1;
+        const LEN_2 = 1 << 2;
+        const LEN_3 = 1 << 3;
+        const LEN_4 = 1 << 4;
+        const LEN_5 = 1 << 5;
+        const LEN_6 = 1 << 6;
+        const LEN_7 = 1 << 7;
+        const LEN_8 = 1 << 8;
+        const LEN_9 = 1 << 9;
+        const LEN_10 = 1 << 10;
+        const LEN_11 = 1 << 11;
+        const LEN_12 = 1 << 12;
+        const OWN  = 1 << 13;
+        const TUN  = 1 << 14;
+        const TOK  = 1 << 15;
+        const ERTX_0 = 1 << 16;
+        const ERTX_1 = 1 << 17;
+        const ERTX_2 = 1 << 18;
+        const ERTX_3 = 1 << 19;
+        const ERTX_4 = 1 << 20;
+        const ERTX_5 = 1 << 21;
+        const RESERVED_1 = 1 << 22;
+        const RESERVED_2 = 1 << 23;
+        const NCC_0 = 1 << 24;
+        const NCC_1 = 1 << 25;
+        const NCC_2 = 1 << 26;
+        const NCC_3 = 1 << 27;
+        const CDH  = 1 << 28;
+        const OWC  = 1 << 29;
+        const TABT = 1 << 30;
+        const CRS  = 1 << 31;
     }
 }
 

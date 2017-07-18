@@ -8,6 +8,9 @@ pub trait Service {
     fn start(); // called after OS has set up paging, allocator, etc.
 }
 
+const IDLE_THRESHOLD: u32 = 10; // how many times we read an empty socket before we issue HLT
+// this makes David's workstation happy since it doesn't peg a core at 100%.
+
 pub struct UserService;
 
 impl Service for UserService {
@@ -68,6 +71,8 @@ impl Service for UserService {
             let mut sockets = SocketSet::new(vec![]);
             let tcp_handle = sockets.add(tcp_socket);
 
+            let mut count = 0;
+
             loop {
                 {
                     let socket: &mut TcpSocket = sockets.get_mut(tcp_handle).as_socket();
@@ -103,7 +108,15 @@ impl Service for UserService {
                 }
 
                 match iface.poll(&mut sockets, 10) {
-                    Ok(()) | Err(Error::Exhausted) => (),
+                    Ok(()) => (),
+                    Err(Error::Exhausted) => {
+                        count += 1;
+                        if count == IDLE_THRESHOLD {
+                            use process;
+                            process::sleep();
+                            count = 0;
+                        }
+                    }
                     Err(e) => warn!("poll error: {}", e),
                 }
             }

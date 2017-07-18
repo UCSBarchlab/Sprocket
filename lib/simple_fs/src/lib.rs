@@ -4,6 +4,8 @@
 
 extern crate slice_cast;
 use core::num::Wrapping;
+use core::cmp::min;
+use core::mem::size_of;
 
 pub const NDIRECT: usize = 64;
 pub const NINDIRECT: usize = 0;
@@ -29,12 +31,14 @@ pub const SUPERBLOCK_ADDR: u32 = 0;
 pub const UNUSED_BLOCKADDR: u32 = 0;
 pub const UNUSED_INUM: u32 = ::core::u32::MAX;
 
+
+
 macro_rules! INODE_SIZE {
-    {} => {::core::mem::size_of::<Inode>()}
+    {} => { size_of::<Inode>() }
 }
 
 macro_rules! INODES_PER_BLOCK {
-    {} => {BLOCKSIZE / INODE_SIZE!()}
+    {} => { BLOCKSIZE / INODE_SIZE!() }
 }
 
 // given an inumber, which block does the inode live in?
@@ -279,7 +283,7 @@ impl<T> FileSystem<T>
             return Err(FsError::EntryExists);
         }
 
-        let dirent_size = ::core::mem::size_of::<DirEntry>();
+        let dirent_size = size_of::<DirEntry>();
         let new_dirent = DirEntry {
             inumber: target,
             name: {
@@ -296,14 +300,14 @@ impl<T> FileSystem<T>
                        dirent_size);
 
             let found_empty = {
-                let dirent: &DirEntry = unsafe { &slice_cast::cast(&tmp_buf[..dirent_size])[0] };
+                let dirent: &DirEntry = unsafe { slice_cast::cast_to(&tmp_buf[..dirent_size]) };
                 dirent.inumber == UNUSED_INUM
             };
 
             if found_empty {
                 {
                     let dirent: &mut DirEntry =
-                        unsafe { &mut slice_cast::cast_mut(&mut tmp_buf[..dirent_size])[0] };
+                        unsafe { slice_cast::cast_to_mut(&mut tmp_buf[..dirent_size]) };
                     *dirent = new_dirent;
                 }
                 self.write(dir, &tmp_buf[..dirent_size], offset)?;
@@ -316,7 +320,7 @@ impl<T> FileSystem<T>
         let mut tmp_buf = [0; BLOCKSIZE];
         {
             let buf: &mut DirEntry =
-                unsafe { &mut slice_cast::cast_mut(&mut tmp_buf[..dirent_size])[0] };
+                unsafe { slice_cast::cast_to_mut(&mut tmp_buf[..dirent_size]) };
             *buf = new_dirent;
         }
 
@@ -329,12 +333,12 @@ impl<T> FileSystem<T>
 
     pub fn dir_lookup(&self, dir: &Inode, name: &[u8]) -> Result<(u32, usize), FsError> {
         assert_eq!(dir.type_, InodeType::Directory, "{:?}", dir.type_);
-        let dirent_size = ::core::mem::size_of::<DirEntry>();
+        let dirent_size = size_of::<DirEntry>();
         for offset in Iterator::step_by(0..dir.size, dirent_size) {
             let mut buf = [0; BLOCKSIZE];
             self.read(dir, &mut buf[..dirent_size], offset)?;
             // read this as a directory entry
-            let entry: &DirEntry = unsafe { &slice_cast::cast(&buf[..dirent_size])[0] };
+            let entry: &DirEntry = unsafe { slice_cast::cast_to(&buf[..dirent_size]) };
             if entry.inumber == UNUSED_INUM {
                 continue;
             }
@@ -472,7 +476,7 @@ impl<T> FileSystem<T>
                     // note: offset doesn't mean don't pad the end, just means we don't need to do
                     // weird prepend logic
                     offset += self.disk
-                        .write(&src_buf[..::core::cmp::min(BLOCKSIZE, src_buf.len())],
+                        .write(&src_buf[..min(BLOCKSIZE, src_buf.len())],
                                inode.device,
                                blockaddr)? as u32;
                 }

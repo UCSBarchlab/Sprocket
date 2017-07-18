@@ -5,7 +5,8 @@
 #![feature(asm)]
 #![feature(repr_simd)]
 #![feature(alloc)]
-#![feature(box_syntax)] #![feature(drop_types_in_const)]
+#![feature(box_syntax)]
+#![feature(drop_types_in_const)]
 
 #![allow(dead_code)]
 #![cfg_attr(feature = "cargo-clippy", allow(empty_loop))]

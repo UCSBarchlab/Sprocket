@@ -78,17 +78,18 @@ pub fn trap_vector_init() {
                                    true);
     }
 
-    IDT.lock()[Interrupt::Syscall as usize] =
-        IdtEntry::new(VAddr::from_usize(unsafe { vectors[Interrupt::Syscall as usize] } as usize),
-                      (Segment::KCode as u16) << 3,
-                      PrivilegeLevel::Ring3,
-                      true);
+    let syscall_idt = unsafe { vectors[Interrupt::Syscall as usize] } as usize;
+    let syscall_vaddr = VAddr::from_usize(syscall_idt);
+    IDT.lock()[Interrupt::Syscall as usize] = IdtEntry::new(syscall_vaddr,
+                                                            (Segment::KCode as u16) << 3,
+                                                            PrivilegeLevel::Ring3,
+                                                            true);
 }
 
 pub fn idtinit() {
+    // unsafe because we're calling asm
     unsafe {
-        // unsafe because we're calling asm and accessing global mutable state
-        lidt(&DescriptorTablePointer::new_idtp(&IDT.lock()[..]))
+        lidt(&DescriptorTablePointer::new_idtp(&IDT.lock()[..]));
     }
 }
 
