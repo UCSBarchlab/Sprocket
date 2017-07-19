@@ -7,6 +7,7 @@
 #![feature(alloc)]
 #![feature(box_syntax)]
 #![feature(drop_types_in_const)]
+#![feature(global_allocator)]
 
 #![allow(dead_code)]
 #![cfg_attr(feature = "cargo-clippy", allow(empty_loop))]
@@ -57,6 +58,8 @@ use service::Service;
 const LOGO: &'static str = concat!(" █▀▀ █▀█ █▀▀ █▀▀ █   █▀█ █▀▀   █ ▀▀▄\n",
                                    " █   █ █ █▀▀ █▀▀ █   █ █ ▀▀█ ▄▀  ▄▀\n",
                                    " ▀▀▀ ▀▀▀ ▀   ▀   ▀▀▀ ▀▀▀ ▀▀▀ ▀   ▀▀▀");
+#[global_allocator]
+static ALLOCATOR: kalloc::RangeAlloc = kalloc::RANGE_ALLOC_INIT;
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -70,7 +73,7 @@ pub extern "C" fn main() {
     unsafe {
         let heap_start = VirtAddr::new(&mem::end as *const _ as usize + mem::PGSIZE).page_roundup();
         let heap_end = PhysAddr(4 * 1024 * 1024).to_virt();
-        kalloc::init(heap_start, heap_end);
+        ALLOCATOR.init(heap_start, heap_end);
     }
 
     info!("Initializing kernel paging");
@@ -87,7 +90,7 @@ pub extern "C" fn main() {
 
     info!("Finishing allocator initialization");
     unsafe {
-        kalloc::init(PhysAddr(4 * 1024 * 1024).to_virt(), mem::PHYSTOP.to_virt());
+        ALLOCATOR.init(PhysAddr(4 * 1024 * 1024).to_virt(), mem::PHYSTOP.to_virt());
     }
 
     info!("Enumerating PCI");

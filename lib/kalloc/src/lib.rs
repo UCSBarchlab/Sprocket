@@ -1,111 +1,63 @@
 #![no_std]
-#![feature(allocator)]
-#![allocator]
+#![feature(alloc)]
+#![feature(allocator_api)]
 #![feature(unique)]
 #![feature(const_fn)]
 
+extern crate alloc;
 extern crate mem_utils;
 extern crate spinlock;
 #[macro_use]
 extern crate log;
-
-use core::slice;
-use core::cmp;
-
-use mem_utils::{VirtAddr, Address, PGSIZE};
-
 mod allocator;
 
-use allocator::{Allocator, Range};
+use mem_utils::{VirtAddr, Address, PGSIZE};
 use spinlock::Mutex;
+use allocator::{Allocator, Range}; // our system allocator
+use alloc::allocator::{Alloc, Layout, AllocErr}; // Rust allocator trait
 
-pub static ALLOC: Mutex<Allocator> = Mutex::new(Allocator {
+pub struct RangeAlloc(Mutex<Allocator>);
+
+impl RangeAlloc {
+    pub unsafe fn init(&self, vstart: VirtAddr, vend: VirtAddr) {
+        self.0.lock().free_range(vstart, vend);
+    }
+}
+
+pub const RANGE_ALLOC_INIT: RangeAlloc = RangeAlloc(Mutex::new(Allocator {
     start: Range {
         next: None,
         size: 0,
     },
     length: 0,
-});
+}));
 
-pub unsafe fn init(vstart: VirtAddr, vend: VirtAddr) {
-    ALLOC.lock().free_range(vstart, vend);
-}
-
-#[no_mangle]
-#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
-pub extern "C" fn __rust_allocate(size: usize, _align: usize) -> *mut u8 {
-    ALLOC.lock().allocate(size).expect("Allocation failed")
-}
-
-#[no_mangle]
-#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
-pub extern "C" fn __rust_allocate_zeroed(size: usize, _align: usize) -> *mut u8 {
-    let new_mem = ALLOC.lock().allocate(size).expect("Allocation failed");
-    let num_bytes = Allocator::size_to_pages(size) * PGSIZE;
-    {
-        let slice: &mut [u8] = unsafe { slice::from_raw_parts_mut(new_mem, num_bytes) };
-        for b in slice.iter_mut() {
-            *b = 0;
-        }
+unsafe impl<'a> Alloc for &'a RangeAlloc {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        assert!(layout.align() <= PGSIZE);
+        let mut kalloc = self.0.lock();
+        let size = layout.size();
+        kalloc.allocate(size)
+            .map_err(|_| AllocErr::Exhausted { request: layout })
     }
-    new_mem
-}
 
-#[no_mangle]
-#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
-pub extern "C" fn __rust_usable_size(size: usize, _align: usize) -> usize {
-    Allocator::size_to_pages(size)
-}
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        let mut kalloc = self.0.lock();
 
-#[no_mangle]
-#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
-pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, _align: usize) {
-    let num_pages = Allocator::size_to_pages(size);
-    unsafe {
+        let size = layout.size();
+        let num_pages = Allocator::size_to_pages(size);
+
         let start_addr = VirtAddr::new(ptr as usize);
         let end_addr = VirtAddr::new(ptr.offset((num_pages * PGSIZE) as isize) as usize);
+
         assert_eq!(end_addr.addr() - start_addr.addr(), num_pages * PGSIZE);
         assert_eq!(end_addr.pageno() - start_addr.pageno(), num_pages);
-        trace!("Deallocating {:#08x} to {:#08x}",
-               start_addr.addr(),
-               end_addr.addr());
-        ALLOC.lock().free_range(start_addr, end_addr);
-    }
-}
 
-#[no_mangle]
-#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
-pub extern "C" fn __rust_reallocate(ptr: *mut u8,
-                                    size: usize,
-                                    new_size: usize,
-                                    _align: usize)
-                                    -> *mut u8 {
-    let num_old_pages = Allocator::size_to_pages(size);
-    let num_new_pages = Allocator::size_to_pages(new_size);
-    let new_mem = ALLOC.lock().allocate(new_size).expect("Allocation failed");
-
-    let old_mem = unsafe { slice::from_raw_parts_mut(ptr, num_old_pages * PGSIZE) };
-    let new = unsafe { slice::from_raw_parts_mut(new_mem, num_new_pages * PGSIZE) };
-
-    let overlap = cmp::min(num_old_pages, num_new_pages) * PGSIZE;
-    new[..overlap].copy_from_slice(&old_mem[..overlap]);
-
-    unsafe {
-        let start_addr = VirtAddr::new(ptr as usize);
-        let end_addr = VirtAddr::new(ptr.offset((num_old_pages * PGSIZE) as isize) as usize);
-        ALLOC.lock().free_range(start_addr, end_addr);
+        kalloc.free_range(start_addr, end_addr);
     }
 
-    new.as_mut_ptr()
-}
-
-#[no_mangle]
-#[allow(unused_variables)]
-#[cfg_attr(feature = "cargo-clippy", allow(not_unsafe_ptr_arg_deref))]
-pub extern "C" fn __rust_reallocate_inplace(ptr: *mut u8,
-                                            size: usize,
-                                            new_size: usize,
-                                            align: usize)
-                                            -> usize {
-    size
+    fn usable_size(&self, layout: &Layout) -> (usize, usize) {
+        let size = layout.size();
+        (size, Allocator::size_to_pages(size) * PGSIZE)
+    }
 }
