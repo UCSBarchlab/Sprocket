@@ -3,6 +3,9 @@ use log::LogLevelFilter;
 use log::{SetLoggerError, ShutdownLoggerError};
 use log;
 
+use console;
+use core::fmt::Write;
+
 const RED: &'static str = "41m";
 const YELLOW: &'static str = "43m";
 const CYAN: &'static str = "44m";
@@ -32,13 +35,18 @@ impl Log for SimpleLogger {
 
             let loc = record.location().module_path();
 
-            print!("{}{}{} {} {}", ESC, color_code, TEXT, letter, RESET);
             let idx = match loc.rfind("::") {
                 Some(i) => i + 2,
                 None => 0,
             };
-            print!(" {:<10} ", &loc[idx..]);
-            println!("{}", record.args());
+
+            // Acquire write lock across the print statements so we atomically
+            // write the entire message
+            let out = &mut console::CONSOLE.lock();
+
+            write!(out, "{}{}{} {} {}", ESC, color_code, TEXT, letter, RESET).unwrap();
+            write!(out, " {:<10} ", &loc[idx..]).unwrap();
+            writeln!(out, "{}", record.args()).unwrap();
         }
     }
 }
