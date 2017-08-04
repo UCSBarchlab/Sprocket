@@ -11,7 +11,7 @@ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
 LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null | head -n 1)
 arch ?= x86
 host_target ?= i686-unknown-linux-gnu
-target ?= i686-cofflos
+target ?= i686-sprocket
 assembly_source_files := $(wildcard src/*.S)
 assembly_object_files := $(patsubst src/%.S, \
     %.o, $(assembly_source_files))
@@ -28,7 +28,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 .gdbinit: .gdbinit.tmpl
 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
 
-qemu-gdb: fs.img cofflos.img .gdbinit
+qemu-gdb: fs.img sprocket.img .gdbinit
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -serial mon:stdio -nographic $(QEMUOPTS) -S $(QEMUGDB)
 
@@ -36,25 +36,25 @@ qemu-gdb: fs.img cofflos.img .gdbinit
 ifndef CPUS
 CPUS := 2
 endif
-QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=cofflos.img,index=0,media=disk,format=raw -m 512 $(QEMUEXTRA) -d guest_errors -device rtl8139,netdev=unet,mac='C0:FF:EE:12:34:56' -netdev tap,id=unet,helper=/usr/lib/qemu/qemu-bridge-helper# -object filter-dump,netdev=unet,id=netdev,file=dump.pcap
+QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=sprocket.img,index=0,media=disk,format=raw -m 512 $(QEMUEXTRA) -d guest_errors -device rtl8139,netdev=unet,mac='C0:FF:EE:12:34:56' -netdev tap,id=unet,helper=/usr/lib/qemu/qemu-bridge-helper# -object filter-dump,netdev=unet,id=netdev,file=dump.pcap
 #-d int -no-reboot
 
-qemu: fs.img cofflos.img
+qemu: fs.img sprocket.img
 	qemu-system-i386  $(QEMUOPTS) -monitor stdio
 
-qemu-dbg: fs.img cofflos.img
+qemu-dbg: fs.img sprocket.img
 	#qemu-system-i386  $(QEMUOPTS) -nographic -d int -no-reboot
 	qemu-system-i386  $(QEMUOPTS) -d int -no-reboot -serial mon:stdio -nographic
 
-qemu-console: fs.img cofflos.img
+qemu-console: fs.img sprocket.img
 	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
 
-qemu-net: fs.img cofflos.img
+qemu-net: fs.img sprocket.img
 	qemu-system-i386 -nographic $(QEMUOPTS) -serial mon:stdio
 
 # -netdev bridge,id=br0 -object filter-dump,netdev=br0,id=br0,file='dump.pcap'
 
-rust_os := target/$(target)/debug/libcofflos.a
+rust_os := target/$(target)/debug/libsprocket.a
 
 # Build the bootloader block
 bootblock: src/bootasm.S src/bootmain.rs
@@ -64,10 +64,10 @@ bootblock: src/bootasm.S src/bootmain.rs
 	$(OBJCOPY) -S -O binary -j .text bootblock.o bootblock
 	./sign.pl bootblock
 
-cofflos.img: bootblock kernel fs.img
-	dd if=/dev/zero of=cofflos.img count=10000
-	dd if=bootblock of=cofflos.img conv=notrunc
-	dd if=kernel of=cofflos.img seek=1 conv=notrunc
+sprocket.img: bootblock kernel fs.img
+	dd if=/dev/zero of=sprocket.img count=10000
+	dd if=bootblock of=sprocket.img conv=notrunc
+	dd if=kernel of=sprocket.img seek=1 conv=notrunc
 
 fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README index.html
 	dd if=/dev/zero of=fs.img bs=512 count=1000
@@ -98,6 +98,6 @@ cargo:
 clean:
 	rm -rf *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*.o *.d *.asm *.sym vectors.S bootblock \
-	kernel cofflos.img fs.img kernelmemfs mkfs \
+	kernel sprocket.img fs.img kernelmemfs mkfs \
 	.gdbinit target \
 	$(UPROGS)

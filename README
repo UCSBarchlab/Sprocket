@@ -1,19 +1,8 @@
+# ⚙ Sprocket
 
-
- █▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
- █   █▀█ █▀▀ █▀▀ █   █▀█ █▀▀   █ ▀▀▄
- █   █ █ █▀▀ █▀▀ █   █ █ ▀▀█ ▄▀  ▄▀
- ▀▀▀ ▀▀▀ ▀   ▀   ▀▀▀ ▀▀▀ ▀▀▀ ▀   ▀▀▀
-
- Congratulations on your purchase of COFFLOS/2!  We at the UCSB
- Architecture and Embedded Systems Laboratory have worked hard to make
- this release of COFFLOS the best yet, and we think you'll be happy
- with your purchase.  COFFLOS/2 is proudly made in the USA.
-
- To get the most out of your COFFLOS/2 installation, register your copy
- by writing to:
- 	Department of Computer Science
- 	Attn: Architecture and Embedded Systems Laboratory
- 	University of California
- 	2104 Harold Frank Hall
- 	Santa Barbara, California, 93106-5110
+Sprocket is a small unikernel written in Rust and x86 assembly.  The goal of
+Sprocket was to create a simplified operating system to explore how Rust's
+safety guarantees could be applied to low-level systems development.  By
+analyzing the use of unsafe code in Sprocket, we hope to determine common
+patterns of how unsafe code is used, and improve the safety of the operating
+system through proposed hardware and software mechanisms.

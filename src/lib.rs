@@ -55,9 +55,6 @@ pub use traps::trap;
 use x86::shared::irq;
 use service::Service;
 
-const LOGO: &'static str = concat!(" █▀▀ █▀█ █▀▀ █▀▀ █   █▀█ █▀▀   █ ▀▀▄\n",
-                                   " █   █ █ █▀▀ █▀▀ █   █ █ ▀▀█ ▄▀  ▄▀\n",
-                                   " ▀▀▀ ▀▀▀ ▀   ▀   ▀▀▀ ▀▀▀ ▀▀▀ ▀   ▀▀▀");
 #[global_allocator]
 static ALLOCATOR: kalloc::RangeAlloc = kalloc::RANGE_ALLOC_INIT;
 
@@ -65,8 +62,9 @@ static ALLOCATOR: kalloc::RangeAlloc = kalloc::RANGE_ALLOC_INIT;
 pub extern "C" fn main() {
     println!("");
     for i in &[196, 202, 214, 34, 51, 57] {
-        println!("[38;5;{}m{}", i, LOGO);
+        print!("[38;5;{}m{} ", i, "⚙");
     }
+    println!("");
 
     logger::init().unwrap();
     info!("Initializing allocator");

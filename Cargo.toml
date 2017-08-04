@@ -1,5 +1,5 @@
 [package]
-name = "cofflos"
+name = "sprocket"
 version = "0.2.0"
 authors = ["David Coffill <david@coffill.net>"]
 
