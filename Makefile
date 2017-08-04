@@ -69,9 +69,9 @@ sprocket.img: bootblock kernel fs.img
 	dd if=bootblock of=sprocket.img conv=notrunc
 	dd if=kernel of=sprocket.img seek=1 conv=notrunc
 
-fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README index.html
+fs.img: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs README.md index.html
 	dd if=/dev/zero of=fs.img bs=512 count=1000
-	cargo run --manifest-path lib/simple_fs/Cargo.toml --target $(host_target) -- fs.img README index.html
+	cargo run --manifest-path lib/simple_fs/Cargo.toml --target $(host_target) -- fs.img README.md index.html
 
 mkfs: lib/simple_fs/src/bin.rs lib/simple_fs/src/lib.rs
 	cargo build --target $(host_target) --manifest-path lib/simple_fs/Cargo.toml

@@ -24,7 +24,7 @@ impl Service for UserService {
         use file;
         use file::{UnixFileSystem, FileHandle};
         let fs = file::SimpleFs::new(ide::Ide::init());
-        let mut file = fs.open(b"/", b"README");
+        let mut file = fs.open(b"/", b"README.md");
 
         let mut buf = vec![0; file.size()];
         file.read(&mut buf);
