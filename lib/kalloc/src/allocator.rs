@@ -72,7 +72,8 @@ impl Allocator {
         assert!(vend.is_page_aligned());
 
         // Create the new range object
-        let mut new_range = Unique::new(vstart.addr() as usize as *mut Range);
+        let mut new_range = Unique::new_unchecked(vstart.addr() as usize as *mut Range);
+
         *new_range.as_mut() = Range {
             next: None,
             size: (vstart.pageno()..vend.pageno()).len() - 1,
